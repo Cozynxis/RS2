@@ -84,8 +84,11 @@ button { transition: background-color 140ms, border-color 140ms, color 140ms; }
 .export-dialog footer { justify-content: flex-end; padding: 10px 0 0; background: transparent; border: 0; }
 .dialog-error { color: #ffb0a9; }
 @media (min-width: 951px) and (min-height: 550px) {
-  .studio-shell { height: 100dvh; }
-  .studio-shell .workspace { min-height: 0; }
+  .studio-shell {
+    display: grid; flex: none; height: 100dvh;
+    grid-template-rows: auto auto minmax(0, 1fr) auto;
+  }
+  .studio-shell .workspace { min-height: 0; grid-template-rows: minmax(0, 1fr); }
   .studio-shell .stage, .studio-shell .sidebar { min-height: 0; overflow: auto; }
   .studio-shell .viewport { min-height: 175px; }
 }
