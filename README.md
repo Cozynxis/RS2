@@ -14,6 +14,8 @@ npm run build
 
 ## Een model maken
 
+Op het startscherm kies je **Model**, **Animatie**, **GFX**, **Levelblok** of **Prefab**. Vul een projectnaam in en kies een leeg project of een startsjabloon. Je kunt ook een auteur en notities invullen. Bij Animatie en GFX stel je de duur en het aantal frames per seconde in.
+
 Voeg een vorm of groep toe en selecteer die in de 3D-weergave of objectboom. Gebruik **G**, **R** en **S** voor verplaatsen, roteren en schalen. Je kunt waarden ook rechtstreeks invoeren. Posities zijn in meters, rotaties in graden. Een object dat naar een andere groep verhuist, behoudt zijn lokale transformatie.
 
 Stel basiskleur, ruwheid en metaalheid in. Per object kun je één PNG- of JPEG-textuur tot 1,5 MB toevoegen. **Ctrl+Z** maakt een wijziging ongedaan. **Ctrl+Shift+Z** of **Ctrl+Y** voert die opnieuw uit. Gebruik op macOS **Cmd**.
@@ -28,16 +30,22 @@ Gebruik **H** of de knop naast een object om het te tonen of te verbergen. Verbo
 
 Editorsneltoetsen hebben voorrang buiten invoervelden als de browser ze doorgeeft. In invoervelden blijven de gebruikelijke sneltoetsen voor tekstbewerking beschikbaar. Sneltoetsen die de browser of het systeem zelf afhandelt, zoals tabblad sluiten, blijven beschikbaar.
 
+## Animeren
+
+Open **Animeren** in het werkblad. Selecteer een object of groep, zet de tijdcursor op een tijdstip en klik op **Keyframe opnemen** om de huidige positie, rotatie en schaal vast te leggen. Neem op andere tijdstippen nieuwe poses op. Met **Voorbeeld tonen** bekijk je de pose op de cursor. **Afspelen** laat de animatie herhalen. Met **Pose bewerken** keer je terug naar de bewerkbare scène. De interpolatie geldt voor het hele project. Bij vloeiende interpolatie worden tussenposes gebakken op de ingestelde beeldsnelheid.
+
 ## Exporteren naar Godot 4
 
-**GLB exporteren** downloadt het model met hiërarchie, transformaties, PBR-materialen en ingesloten texturen. **Godot-pakket** maakt een ZIP met deze structuur.
+Open **Exporteren…** en kies GLB, glTF, Godot 4 ZIP of RS2-projectgegevens (JSON). Voor 3D-export kun je bestandsnaam, selectie, schaalfactor, oorsprong, maximale textuurgrootte, verborgen objecten, texturen, animatie, metadata en losse transformaties instellen. Animatie vereist losse transformaties in glTF en schakelt die automatisch in. Hercentreren gebruikt de grenzen van de bewerkbare scène. De JSON-export bevat de volledige projectgegevens.
+
+Het Godot-pakket gebruikt deze structuur.
 
 ```text
 assets/
   models/<project>.glb
   textures/
   animations/
-  presets/<project>.json
+  presets/<project>.json (optioneel)
 IMPORTEREN.txt
 ```
 
@@ -49,8 +57,8 @@ Een push naar `modelengine` start de build- en Pages-workflow. Stel bij **Settin
 
 ## Geavanceerde V1-features voor later
 
-- GLB/glTF-import, meerdere projecten en presets openen vanuit bestanden.
+- GLB/glTF-import, meerdere lokaal bewaarde projecten en RS2-projecten openen vanuit bestanden.
 - Mesh- en UV-bewerking, extra textuurkanalen en materiaalbibliotheken.
 - Meervoudige selectie en orthografische aanzichten.
-- Keyframes, een animatietijdlijn, vloeiende interpolatie en animatie-export.
+- Meerdere animatieclips, rigging en een deeltjeseditor voor GFX.
 - Godot-specifieke scènes, colliders en metadata voor levels. Levelbouw en gameplay horen bij de latere gamefase.

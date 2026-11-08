@@ -1,7 +1,8 @@
 import * as THREE from 'three'
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js'
 import { strToU8, zipSync } from 'fflate'
-import { isVisible, type Kind, type ModelNode, type Project } from './model'
+import { descendants, isVisible, type Kind, type ModelNode, type Project } from './model'
+import { makeClip } from './animation'
 
 const geometries: Record<Exclude<Kind, 'group'>, () => THREE.BufferGeometry> = {
   box: () => new THREE.BoxGeometry(),
@@ -42,11 +43,24 @@ export function makeScene(project: Project) {
   }
 
   for (const node of project.nodes) {
-    const object = node.kind === 'group' ? new THREE.Group() : new THREE.Mesh(
-      geometries[node.kind](),
+    let geometry = node.kind === 'group' ? undefined : geometries[node.kind]()
+    if (geometry && node.flat) {
+      if (geometry.index) {
+        const indexed = geometry
+        geometry = indexed.toNonIndexed()
+        indexed.dispose()
+      }
+      geometry.deleteAttribute('normal')
+      geometry.computeVertexNormals()
+    }
+    const object = !geometry ? new THREE.Group() : new THREE.Mesh(
+      geometry,
       new THREE.MeshStandardMaterial({
         color: node.color, roughness: node.roughness, metalness: node.metalness,
-        side: node.kind === 'plane' ? THREE.DoubleSide : THREE.FrontSide,
+        side: (node.doubleSided ?? node.kind === 'plane') ? THREE.DoubleSide : THREE.FrontSide,
+        flatShading: node.flat ?? false,
+        opacity: node.opacity ?? 1, transparent: (node.opacity ?? 1) < 1,
+        emissive: node.color, emissiveIntensity: node.emission ?? 0,
         map: node.texture ? getTexture(node.texture) : null,
       }),
     )
@@ -86,16 +100,59 @@ function download(name: string, bytes: Uint8Array<ArrayBuffer>, type: string) {
   window.setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
-export async function exportProject(project: Project, godot: boolean) {
-  const scene = makeScene({ ...project, nodes: project.nodes.filter(node => isVisible(project.nodes, node)) })
-  const slug = project.name.toLowerCase().normalize('NFKD').replace(/[^a-z0-9_-]+/g, '-')
+export type ExportOptions = {
+  format: 'glb' | 'gltf' | 'godot' | 'json'; name: string; selection?: string;
+  hidden: boolean; textures: boolean; animations: boolean; metadata: boolean;
+  scale: number; origin: 'original' | 'center' | 'ground'; textureSize: number; trs: boolean;
+}
+
+export async function exportProject(project: Project, options: ExportOptions) {
+  const slug = options.name.toLowerCase().normalize('NFKD').replace(/[^a-z0-9_-]+/g, '-')
     .replace(/^-+|-+$/g, '') || 'rs2-model'
+  if (options.format === 'json') {
+    download(`${slug}.json`, new Uint8Array(strToU8(JSON.stringify(project, null, 2))), 'application/json')
+    return
+  }
+  const selected = options.selection ? descendants(project.nodes, options.selection) : null
+  if (selected) {
+    let node = project.nodes.find(node => node.id === options.selection)
+    while (node?.parent) {
+      selected.add(node.parent)
+      node = project.nodes.find(parent => parent.id === node?.parent)
+    }
+  }
+  const nodes = project.nodes.filter(node => (!selected || selected.has(node.id)) &&
+    (options.hidden || isVisible(project.nodes, node))).map(node => ({
+      ...node, hidden: false, texture: options.textures ? node.texture : undefined,
+    }))
+  if (!nodes.some(node => node.kind !== 'group')) throw new Error('De gekozen selectie bevat geen exporteerbare vormen.')
+  const scene = makeScene({ ...project, nodes })
   try {
     await scene.ready
-    const data = await new GLTFExporter().parseAsync(scene.root, { binary: true })
+    const wrapper = new THREE.Group()
+    wrapper.name = project.name
+    wrapper.add(scene.root)
+    if (options.metadata && project.info) wrapper.userData.project = project.info
+    scene.root.traverse(object => { delete object.userData.editorId })
+    if (options.origin !== 'original') {
+      const bounds = new THREE.Box3().setFromObject(scene.root)
+      const center = bounds.getCenter(new THREE.Vector3())
+      if (options.origin === 'ground') center.y = bounds.min.y
+      scene.root.position.sub(center)
+    }
+    wrapper.scale.setScalar(options.scale)
+    const clip = options.animations ? makeClip({ ...project, nodes }, scene.objects) : undefined
+    const data = await new GLTFExporter().parseAsync(wrapper, {
+      binary: options.format !== 'gltf', animations: clip ? [clip] : [],
+      maxTextureSize: options.textureSize, trs: options.trs || !!clip,
+    })
+    if (options.format === 'gltf') {
+      download(`${slug}.gltf`, new Uint8Array(strToU8(JSON.stringify(data, null, 2))), 'model/gltf+json')
+      return
+    }
     if (!(data instanceof ArrayBuffer)) throw new Error('Geen binair glTF-bestand ontvangen.')
     const glb = new Uint8Array(data)
-    if (!godot) {
+    if (options.format === 'glb') {
       download(`${slug}.glb`, glb, 'model/gltf-binary')
       return
     }
@@ -103,9 +160,10 @@ export async function exportProject(project: Project, godot: boolean) {
       [`assets/models/${slug}.glb`]: glb,
       'assets/textures/': new Uint8Array(),
       'assets/animations/': new Uint8Array(),
-      [`assets/presets/${slug}.json`]: strToU8(JSON.stringify(project, null, 2)),
-      'IMPORTEREN.txt': strToU8('Pak deze ZIP uit in je Godot 4-project. Open assets/models en sleep het GLB-bestand vanuit het Bestandssysteem naar je scène. Texturen zitten in het GLB-bestand. De JSON in assets/presets bevat de RS2-editordata.'),
+      'assets/presets/': new Uint8Array(),
+      'IMPORTEREN.txt': strToU8('Pak deze ZIP uit in je Godot 4-project. Open assets/models en sleep het GLB-bestand vanuit het Bestandssysteem naar je scène. Geselecteerde texturen en animatie zitten in het GLB-bestand.'),
     }
+    if (options.metadata) files[`assets/presets/${slug}.json`] = strToU8(JSON.stringify(project, null, 2))
     download(`${slug}-godot.zip`, new Uint8Array(zipSync(files)), 'application/zip')
   } finally {
     scene.dispose()

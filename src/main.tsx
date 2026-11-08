@@ -1,15 +1,26 @@
-import { useEffect, useState, type ChangeEvent } from 'react'
+import { useEffect, useState, type ChangeEvent, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
-import { cloneObject, copyObject, createNode, descendants, isVisible, kinds, loadProject, storageKey } from './model'
+import { cloneObject, copyObject, createNode, descendants, isVisible, kinds, loadProject, projectTypes, storageKey } from './model'
 import type { Kind, Mode, ModelNode, ObjectClip, Project, Vector } from './model'
-import { exportProject } from './scene'
 import { Viewport, type ViewOptions } from './Viewport'
+import { ProjectHome } from './ProjectHome'
+import { ExportDialog } from './ExportDialog'
+import { Timeline } from './Timeline'
 import './style.css'
+import './studio.css'
 
 const modes = { translate: 'Verplaatsen', rotate: 'Roteren', scale: 'Schalen' } as const
 const symbols = { box: '◇', sphere: '○', cylinder: '▤', cone: '△', plane: '▱', torus: '◎', capsule: '◉', wedge: '◢', group: '▰' }
 const viewLabels = { grid: 'Raster', snap: 'Snapping', local: 'Lokale assen', wireframe: 'Draadmodel' }
 type History = { past: Project[]; current: Project; future: Project[] }
+
+function Menu({ label, children }: { label: string; children: ReactNode }) {
+  return <details name="studio-menu" className="studio-menu" onClick={event => {
+    if ((event.target as HTMLElement).closest('button')) event.currentTarget.open = false
+  }}>
+    <summary>{label}</summary><div className="menu-items">{children}</div>
+  </details>
+}
 
 function ObjectTree({ nodes, parent, selected, onSelect, onVisibility }: {
   nodes: ModelNode[]
@@ -63,6 +74,10 @@ function App() {
   const [saveRequested, requestSave] = useState(false)
   const [message, setMessage] = useState('')
   const [exporting, setExporting] = useState(false)
+  const [home, setHome] = useState(true)
+  const [animate, setAnimate] = useState(false)
+  const [previewTime, setPreviewTime] = useState<number | null>(null)
+  const [search, setSearch] = useState('')
   const selected = project.nodes.find(node => node.id === selectedId)
   const subtree = selected && descendants(project.nodes, selected.id)
 
@@ -134,17 +149,18 @@ function App() {
       requestSave(false)
     }
   })
-  async function runExport(godot: boolean) {
-    setExporting(true)
-    setMessage('Export wordt voorbereid…')
-    try {
-      await exportProject(project, godot)
-      setMessage(godot ? 'Godot-pakket gedownload.' : 'GLB-bestand gedownload.')
-    } catch (error) {
-      setMessage(`Export mislukt. ${error instanceof Error ? error.message : 'Controleer de texturen.'}`)
-    } finally {
-      setExporting(false)
+  function openProject(next: Project, fresh: boolean) {
+    if (fresh) {
+      edit(() => next)
+      select(next.nodes[0]?.id ?? null)
+      setSearch('')
+      setMessage('')
     }
+    setAnimate(next.info?.type === 'animation' || next.info?.type === 'gfx')
+    setHome(false)
+  }
+  function toggleView(option: keyof ViewOptions) {
+    setOptions(current => ({ ...current, [option]: !current[option] }))
   }
   async function loadTexture(event: ChangeEvent<HTMLInputElement>, id: string) {
     const file = event.target.files?.[0]
@@ -176,6 +192,7 @@ function App() {
 
   useEffect(() => {
     function shortcut(event: KeyboardEvent) {
+      if (home || exporting) return
       const editing = event.target instanceof HTMLElement &&
         event.target.closest('input, select, textarea, [contenteditable]')
       const key = event.key.toLowerCase()
@@ -217,10 +234,53 @@ function App() {
     return () => window.removeEventListener('keydown', shortcut)
   })
 
-  const hasMesh = project.nodes.some(node => node.kind !== 'group' && isVisible(project.nodes, node))
-  return <>
+  if (home) return <ProjectHome current={project}
+    onOpen={() => openProject(project, false)} onCreate={next => openProject(next, true)} />
+
+  const query = search.trim().toLowerCase()
+  const matched = new Set<string>()
+  if (query) {
+    for (const node of project.nodes.filter(item => item.name.toLowerCase().includes(query))) {
+      let item: ModelNode | undefined = node
+      while (item && !matched.has(item.id)) {
+        matched.add(item.id)
+        item = project.nodes.find(candidate => candidate.id === item?.parent)
+      }
+    }
+  }
+  const tree = query ? project.nodes.filter(node => matched.has(node.id)) : project.nodes
+  return <div className="studio-shell">
     <header className="top">
-      <div className="brand"><div aria-hidden="true">RS</div><span>RS2 <strong>Modelengine</strong></span></div>
+      <div className="brand"><div aria-hidden="true">RS</div><span>RS2 <strong>Studio</strong></span></div>
+      <nav className="menu-bar" aria-label="Hoofdmenu">
+        <Menu label="Bestand">
+          <button onClick={() => setHome(true)}>Startscherm</button>
+          <button onClick={save}>Lokaal bewaren <kbd>Ctrl+S</kbd></button>
+          <button onClick={() => setExporting(true)}>Exporteren…</button>
+        </Menu>
+        <Menu label="Bewerken">
+          <button disabled={!history.past.length} onClick={() => stepHistory(false)}>Ongedaan maken <kbd>Ctrl+Z</kbd></button>
+          <button disabled={!history.future.length} onClick={() => stepHistory(true)}>Opnieuw uitvoeren <kbd>Ctrl+Y</kbd></button>
+          <button disabled={!selected} onClick={duplicate}>Dupliceren <kbd>Ctrl+D</kbd></button>
+          <button disabled={!selected} onClick={() => copy()}>Kopiëren <kbd>Ctrl+C</kbd></button>
+          <button disabled={!selected} onClick={() => copy(true)}>Knippen <kbd>Ctrl+X</kbd></button>
+          <button disabled={!clipboard} onClick={paste}>Plakken <kbd>Ctrl+V</kbd></button>
+          <button disabled={!selected} onClick={remove}>Verwijderen <kbd>Del</kbd></button>
+        </Menu>
+        <Menu label="Toevoegen">
+          {(Object.keys(kinds) as Kind[]).map(kind => <button key={kind} onClick={() => add(kind)}>{kinds[kind]}</button>)}
+        </Menu>
+        <Menu label="Weergave">
+          {(Object.keys(viewLabels) as (keyof ViewOptions)[]).map(option =>
+            <button key={option} aria-pressed={options[option]} onClick={() => toggleView(option)}>{viewLabels[option]}</button>,
+          )}
+          <button aria-pressed={animate} onClick={() => setAnimate(!animate)}>Animatietijdlijn</button>
+        </Menu>
+      </nav>
+      <div className="actions"><button className="primary" onClick={() => setExporting(true)}>Exporteren…</button></div>
+    </header>
+    <div className="project-strip">
+      <button aria-label="Startscherm" title="Startscherm" onClick={() => setHome(true)}>⌂</button>
       <input aria-label="Projectnaam" className="project-name" key={project.name} defaultValue={project.name}
         onKeyDown={event => { if (event.key === 'Enter') event.currentTarget.blur() }}
         onBlur={event => {
@@ -228,24 +288,19 @@ function App() {
           event.currentTarget.value = name
           if (name !== project.name) edit(current => ({ ...current, name }))
         }} />
-      <div className="actions">
-        <button onClick={save}>Lokaal bewaren</button>
-        <button disabled={exporting || !hasMesh} onClick={() => void runExport(false)}>GLB exporteren</button>
-        <button className="primary" disabled={exporting || !hasMesh} onClick={() => void runExport(true)}>Godot-pakket</button>
+      <span className="project-badge">{projectTypes[project.info?.type ?? 'model'].label}</span>
+      <div className="workspace-tabs" role="group" aria-label="Werkmodus">
+        <button aria-pressed={!animate} onClick={() => setAnimate(false)}>Bewerken</button>
+        <button aria-pressed={animate} onClick={() => setAnimate(true)}>Animeren</button>
       </div>
-    </header>
-    <div className="command-bar" role="group" aria-label="Object bewerken">
-      <button disabled={!selected} onClick={duplicate}>Dupliceren <kbd>Ctrl+D</kbd></button>
-      <button disabled={!selected} onClick={() => copy()}>Kopiëren <kbd>Ctrl+C</kbd></button>
-      <button disabled={!selected} onClick={() => copy(true)}>Knippen <kbd>Ctrl+X</kbd></button>
-      <button disabled={!clipboard} onClick={paste}>Plakken <kbd>Ctrl+V</kbd></button>
     </div>
     <main className="workspace">
       <aside className="sidebar outliner">
         <section>
           <h2>Objectboom <span className="count">{project.nodes.length}</span></h2>
-          {project.nodes.length ? <ObjectTree nodes={project.nodes} parent={null}
-            selected={selected?.id ?? null} onSelect={select} onVisibility={toggleVisibility} /> : <p>Voeg een vorm of groep toe.</p>}
+          <label className="outliner-search">Zoeken<input type="search" value={search} onChange={event => setSearch(event.target.value)} placeholder="Objectnaam…" /></label>
+          {tree.length ? <ObjectTree nodes={tree} parent={null}
+            selected={selected?.id ?? null} onSelect={select} onVisibility={toggleVisibility} /> : <p>{query ? 'Geen resultaten.' : 'Voeg een vorm of groep toe.'}</p>}
         </section>
       </aside>
       <section className="stage" aria-label="Werkgebied">
@@ -265,13 +320,16 @@ function App() {
         <div className="primitive-bar" role="group" aria-label="Toevoegen">{(Object.keys(kinds) as Kind[]).map(kind =>
           <button key={kind} onClick={() => add(kind)}><span aria-hidden="true">{symbols[kind]}</span>{kinds[kind]}</button>,
         )}</div>
-        <Viewport project={project} selected={selected?.id ?? null} mode={mode} options={options} onSelect={select} onTransform={updateNode} />
+        <Viewport project={project} selected={selected?.id ?? null} mode={mode} options={options} previewTime={animate ? previewTime : null}
+          onSelect={select} onTransform={updateNode} />
         <div className="view-bar" role="group" aria-label="Weergaveopties">
           {(Object.keys(viewLabels) as (keyof ViewOptions)[]).map(option =>
-            <button key={option} aria-pressed={options[option]} onClick={() =>
-              setOptions(current => ({ ...current, [option]: !current[option] }))}>{viewLabels[option]}</button>,
+            <button key={option} aria-pressed={options[option]} onClick={() => toggleView(option)}>{viewLabels[option]}</button>,
           )}
         </div>
+        {animate && <Timeline project={project} selected={selected} onPreview={setPreviewTime}
+          onPose={updateNode} onKeys={(id, keys) => updateNode(id, { keys })}
+          onInterpolation={interpolation => edit(current => ({ ...current, interpolation }))} />}
       </section>
       <aside className="inspector sidebar" aria-label="Eigenschappen">
         <section>
@@ -306,6 +364,10 @@ function App() {
                 }} />)}
             </div></fieldset>,
           )}
+          <button onClick={() => {
+            const { position, rotation, scale } = createNode(selected.kind, selected.parent)
+            updateNode(selected.id, { position, rotation, scale })
+          }}>Transformatie herstellen</button>
         </section>}
         {selected && selected.kind !== 'group' && <section key={`material-${selected.id}`}>
           <h2>Materiaal</h2>
@@ -314,6 +376,14 @@ function App() {
               onChange={event => updateNode(selected.id, { color: event.target.value })} /></label>
             <NumberField label="Ruwheid" value={selected.roughness} min={0} max={1} onChange={roughness => updateNode(selected.id, { roughness })} />
             <NumberField label="Metaalheid" value={selected.metalness} min={0} max={1} onChange={metalness => updateNode(selected.id, { metalness })} />
+            <NumberField label="Dekking" value={selected.opacity ?? 1} min={0} max={1} onChange={opacity => updateNode(selected.id, { opacity })} />
+            <NumberField label="Lichtsterkte" value={selected.emission ?? 0} min={0} max={10} onChange={emission => updateNode(selected.id, { emission })} />
+            <div className="check-grid">
+              <label><input type="checkbox" checked={selected.flat ?? false} onChange={event =>
+                updateNode(selected.id, { flat: event.target.checked })} /> Vlakke normals</label>
+              <label><input type="checkbox" checked={selected.doubleSided ?? selected.kind === 'plane'} onChange={event =>
+                updateNode(selected.id, { doubleSided: event.target.checked })} /> Dubbelzijdig</label>
+            </div>
             <label>Textuur (PNG / JPEG)<input type="file" accept="image/png,image/jpeg" onChange={event => void loadTexture(event, selected.id)} /></label>
             {selected.texture && <div className="texture">
               <img src={selected.texture} alt="Huidige textuur" />
@@ -323,8 +393,9 @@ function App() {
         </section>}
       </aside>
     </main>
+    {exporting && <ExportDialog project={project} selected={selected} onClose={() => setExporting(false)} onExport={setMessage} />}
     <footer><span role="status">{message || 'Editor gereed'}</span><span>{saved === project ? 'Lokaal bewaard' : 'Browseropslag · handmatig'}</span></footer>
-  </>
+  </div>
 }
 
 createRoot(document.getElementById('root')!).render(<App />)

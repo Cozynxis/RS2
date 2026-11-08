@@ -5,6 +5,7 @@ import { TransformControls } from 'three/addons/controls/TransformControls.js'
 import type { Mode, ModelNode, Project } from './model'
 import { makeScene } from './scene'
 import { isVisible } from './model'
+import { makeClip } from './animation'
 
 export type ViewOptions = { grid: boolean; snap: boolean; local: boolean; wireframe: boolean }
 
@@ -14,6 +15,7 @@ type Props = {
   selected: string | null
   mode: Mode
   options: ViewOptions
+  previewTime: number | null
   onSelect: (id: string | null) => void
   onTransform: (id: string, transform: Transform) => void
 }
@@ -64,7 +66,7 @@ export function Viewport(props: Props) {
         scale: object.scale.toArray(),
       })
     })
-    const grid = new THREE.GridHelper(100, 100, '#57677e', '#2d3a4d')
+    const grid = new THREE.GridHelper(100, 100, '#7b8da5', '#485971')
     scene.add(grid, new THREE.HemisphereLight('#dfefff', '#61718b', 2))
     const key = new THREE.DirectionalLight('#fff3df', 2.8)
     key.position.set(4, 8, 5)
@@ -72,10 +74,17 @@ export function Viewport(props: Props) {
 
     let source: Project | undefined
     let model: ReturnType<typeof makeScene> | undefined
+    let mixer: THREE.AnimationMixer | undefined
+    let action: THREE.AnimationAction | undefined
+    let lastTime: number | null = null
     function refresh() {
       const { project, selected, mode, options } = latest.current
       if (source !== project) {
         gizmo.detach()
+        mixer?.stopAllAction()
+        mixer = undefined
+        action = undefined
+        lastTime = null
         if (model) {
           scene.remove(model.root)
           model.dispose()
@@ -88,6 +97,13 @@ export function Viewport(props: Props) {
           if (model === next) setError('Een textuur kon niet worden geladen.')
         })
         scene.add(model.root)
+        const clip = makeClip(project, next.objects)
+        if (clip) {
+          mixer = new THREE.AnimationMixer(next.root)
+          action = mixer.clipAction(clip)
+          action.setLoop(THREE.LoopOnce, 1)
+          action.clampWhenFinished = true
+        }
       }
       grid.visible = options.grid
       model?.root.traverse(object => {
@@ -100,7 +116,7 @@ export function Viewport(props: Props) {
       gizmo.setScaleSnap(options.snap ? 0.25 : null)
       const node = project.nodes.find(node => node.id === selected)
       const object = node && isVisible(project.nodes, node) && model?.objects.get(node.id)
-      if (object) gizmo.attach(object)
+      if (object && latest.current.previewTime === null) gizmo.attach(object)
       else gizmo.detach()
     }
     function focus() {
@@ -153,6 +169,19 @@ export function Viewport(props: Props) {
     })
     resize.observe(container)
     renderer.setAnimationLoop(() => {
+      const time = latest.current.previewTime
+      if (time !== lastTime) {
+        if (time === null) {
+          action?.stop()
+        } else if (mixer && action) {
+          action.enabled = true
+          action.paused = false
+          action.play()
+          mixer.setTime(time)
+        }
+        lastTime = time
+        if (time === null || gizmo.object) refresh()
+      }
       orbit.update()
       renderer.render(scene, camera)
     })

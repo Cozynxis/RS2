@@ -6,6 +6,8 @@ export const kinds = {
 export type Kind = keyof typeof kinds
 export type Vector = [number, number, number]
 export type Mode = 'translate' | 'rotate' | 'scale'
+export type Pose = { position: Vector; rotation: Vector; scale: Vector }
+export type Keyframe = Pose & { time: number }
 export type ModelNode = {
   id: string
   name: string
@@ -19,9 +21,29 @@ export type ModelNode = {
   metalness: number
   texture?: string
   hidden?: boolean
+  opacity?: number
+  emission?: number
+  flat?: boolean
+  doubleSided?: boolean
+  keys?: Keyframe[]
 }
 
-export type Project = { version: 1; name: string; nodes: ModelNode[] }
+export const projectTypes = {
+  model: { label: 'Model', description: 'Bouw en textureer een 3D-object.', templates: ['Leeg', 'Kubus'] },
+  animation: { label: 'Animatie', description: 'Animeer objecten met keyframes.', templates: ['Leeg', 'Stuiterende bol'] },
+  gfx: { label: 'GFX', description: 'Maak een effect van geanimeerde, lichtgevende vormen.', templates: ['Leeg', 'Energiepuls'] },
+  level: { label: 'Levelblok', description: 'Maak een bouwstuk voor je level.', templates: ['Leeg', 'Platform met helling'] },
+  prefab: { label: 'Prefab', description: 'Bouw een groep die je als één asset kunt exporteren.', templates: ['Leeg', 'Gegroepeerd obstakel'] },
+} as const
+export type ProjectType = keyof typeof projectTypes
+export type ProjectInfo = {
+  type: ProjectType; name: string; author: string; notes: string;
+  template: number; duration: number; fps: number;
+}
+export type Project = {
+  version: 1; name: string; nodes: ModelNode[];
+  info?: Omit<ProjectInfo, 'name' | 'template'>; interpolation?: 'linear' | 'step' | 'ease';
+}
 export const storageKey = 'rs2-modelengine-v1'
 
 export function createNode(kind: Kind, parent: string | null): ModelNode {
@@ -31,6 +53,42 @@ export function createNode(kind: Kind, parent: string | null): ModelNode {
     rotation: kind === 'plane' ? [-90, 0, 0] : [0, 0, 0],
     scale: [1, 1, 1], color: '#39cbb7', roughness: 0.55, metalness: 0,
   }
+}
+
+export function newProject({ name, template, ...info }: ProjectInfo): Project {
+  const project: Project = { version: 1, name, info, nodes: [], interpolation: 'ease' }
+  if (!template) return project
+  if (info.type === 'model') project.nodes.push(createNode('box', null))
+  if (info.type === 'animation' || info.type === 'gfx') {
+    const gfx = info.type === 'gfx'
+    const node = createNode(gfx ? 'torus' : 'sphere', null)
+    if (gfx) Object.assign(node, { name: 'Energiering', color: '#53baff', emission: 2, opacity: 0.8 })
+    const pose: Pose = { position: node.position, rotation: node.rotation, scale: node.scale }
+    node.keys = [
+      { ...pose, time: 0 },
+      { ...pose, time: info.duration / 2, position: [0, 2, 0], scale: gfx ? [2.5, 2.5, 2.5] : [1, 1, 1] },
+      { ...pose, time: info.duration },
+    ]
+    project.nodes.push(node)
+  }
+  if (info.type === 'level') {
+    project.nodes.push(
+      { ...createNode('box', null), name: 'Platform', scale: [4, 0.4, 3], position: [0, 0.2, 0] },
+      { ...createNode('wedge', null), name: 'Helling', scale: [2, 0.4, 3], position: [-3, 0.2, 0] },
+    )
+  }
+  if (info.type === 'prefab') {
+    const group = createNode('group', null)
+    project.nodes.push(group,
+      { ...createNode('box', group.id), name: 'Voet', scale: [2, 0.4, 1], position: [0, 0.2, 0] },
+      { ...createNode('cylinder', group.id), name: 'Paal', position: [0, 0.9, 0] },
+    )
+  }
+  return project
+}
+
+export function animationDuration(project: Project) {
+  return Math.max(project.info?.duration ?? 2, ...project.nodes.flatMap(node => node.keys?.map(key => key.time) ?? []))
 }
 
 export function loadProject(): Project {
@@ -66,12 +124,15 @@ export function copyObject(project: Project, root: ModelNode): ObjectClip {
 export function cloneObject(clip: ObjectClip, parent: string | null, offset: number) {
   const ids = new Map(clip.nodes.map(node => [node.id, crypto.randomUUID()]))
   const id = ids.get(clip.root.id)!
-  const nodes = clip.nodes.map(node => {
+  const nodes = clip.nodes.map((node): ModelNode => {
     const isRoot = node.id === clip.root.id
     const position: Vector = [...node.position]
     if (isRoot) position[0] += offset
     return {
       ...node, id: ids.get(node.id)!, position,
+      keys: isRoot ? node.keys?.map(key => ({
+        ...key, position: [key.position[0] + offset, key.position[1], key.position[2]],
+      })) : node.keys,
       name: isRoot ? `${node.name} kopie` : node.name,
       parent: isRoot ? parent : ids.get(node.parent!)!,
     }
