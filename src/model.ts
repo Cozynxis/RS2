@@ -1,6 +1,6 @@
 export const kinds = {
   box: 'Kubus', sphere: 'Bol', cylinder: 'Cilinder', cone: 'Kegel',
-  plane: 'Vlak', torus: 'Ring', group: 'Groep',
+  plane: 'Vlak', torus: 'Ring', capsule: 'Capsule', wedge: 'Wig', group: 'Groep',
 } as const
 
 export type Kind = keyof typeof kinds
@@ -18,6 +18,7 @@ export type ModelNode = {
   roughness: number
   metalness: number
   texture?: string
+  hidden?: boolean
 }
 
 export type Project = { version: 1; name: string; nodes: ModelNode[] }
@@ -53,4 +54,33 @@ export function descendants(nodes: ModelNode[], id: string) {
     for (const descendant of descendants(nodes, child.id)) ids.add(descendant)
   }
   return ids
+}
+
+export type ObjectClip = { root: ModelNode; nodes: ModelNode[] }
+
+export function copyObject(project: Project, root: ModelNode): ObjectClip {
+  const ids = descendants(project.nodes, root.id)
+  return { root, nodes: project.nodes.filter(node => ids.has(node.id)) }
+}
+
+export function cloneObject(clip: ObjectClip, parent: string | null, offset: number) {
+  const ids = new Map(clip.nodes.map(node => [node.id, crypto.randomUUID()]))
+  const id = ids.get(clip.root.id)!
+  const nodes = clip.nodes.map(node => {
+    const isRoot = node.id === clip.root.id
+    const position: Vector = [...node.position]
+    if (isRoot) position[0] += offset
+    return {
+      ...node, id: ids.get(node.id)!, position,
+      name: isRoot ? `${node.name} kopie` : node.name,
+      parent: isRoot ? parent : ids.get(node.parent!)!,
+    }
+  })
+  return { id, nodes }
+}
+
+export function isVisible(nodes: ModelNode[], node: ModelNode): boolean {
+  if (node.hidden) return false
+  const parent = nodes.find(candidate => candidate.id === node.parent)
+  return !parent || isVisible(nodes, parent)
 }

@@ -1,27 +1,34 @@
 import { useEffect, useState, type ChangeEvent } from 'react'
 import { createRoot } from 'react-dom/client'
-import { createNode, descendants, kinds, loadProject, storageKey } from './model'
-import type { Kind, Mode, ModelNode, Project, Vector } from './model'
+import { cloneObject, copyObject, createNode, descendants, isVisible, kinds, loadProject, storageKey } from './model'
+import type { Kind, Mode, ModelNode, ObjectClip, Project, Vector } from './model'
 import { exportProject } from './scene'
-import { Viewport } from './Viewport'
+import { Viewport, type ViewOptions } from './Viewport'
 import './style.css'
 
 const modes = { translate: 'Verplaatsen', rotate: 'Roteren', scale: 'Schalen' } as const
-const symbols = { box: '◇', sphere: '○', cylinder: '▤', cone: '△', plane: '▱', torus: '◎', group: '▰' }
+const symbols = { box: '◇', sphere: '○', cylinder: '▤', cone: '△', plane: '▱', torus: '◎', capsule: '◉', wedge: '◢', group: '▰' }
+const viewLabels = { grid: 'Raster', snap: 'Snapping', local: 'Lokale assen', wireframe: 'Draadmodel' }
 type History = { past: Project[]; current: Project; future: Project[] }
 
-function ObjectTree({ nodes, parent, selected, onSelect }: {
+function ObjectTree({ nodes, parent, selected, onSelect, onVisibility }: {
   nodes: ModelNode[]
   parent: string | null
   selected: string | null
   onSelect: (id: string) => void
+  onVisibility: (node: ModelNode) => void
 }) {
   return <ul className="tree">
     {nodes.filter(node => node.parent === parent).map(node => <li key={node.id}>
-      <button aria-pressed={selected === node.id} onClick={() => onSelect(node.id)}>
-        <span aria-hidden="true">{symbols[node.kind]}</span> {node.name}
-      </button>
-      {node.kind === 'group' && <ObjectTree {...{ nodes, parent: node.id, selected, onSelect }} />}
+      <div className={`tree-row${isVisible(nodes, node) ? '' : ' hidden-node'}`}>
+        <button aria-pressed={selected === node.id} onClick={() => onSelect(node.id)}>
+          <span aria-hidden="true">{symbols[node.kind]}</span> {node.name}
+        </button>
+        <button className="visibility" title={node.hidden ? 'Tonen' : 'Verbergen'}
+          aria-label={`${node.name} ${node.hidden ? 'tonen' : 'verbergen'}`}
+          onClick={() => onVisibility(node)}>{node.hidden ? '◌' : '◉'}</button>
+      </div>
+      {node.kind === 'group' && <ObjectTree {...{ nodes, parent: node.id, selected, onSelect, onVisibility }} />}
     </li>)}
   </ul>
 }
@@ -50,7 +57,10 @@ function App() {
   const project = history.current
   const [selectedId, select] = useState<string | null>(() => project.nodes[0]?.id ?? null)
   const [mode, setMode] = useState<Mode>('translate')
+  const [clipboard, setClipboard] = useState<ObjectClip>()
+  const [options, setOptions] = useState<ViewOptions>({ grid: true, snap: false, local: false, wireframe: false })
   const [saved, setSaved] = useState<Project>()
+  const [saveRequested, requestSave] = useState(false)
   const [message, setMessage] = useState('')
   const [exporting, setExporting] = useState(false)
   const selected = project.nodes.find(node => node.id === selectedId)
@@ -89,6 +99,26 @@ function App() {
     edit(current => ({ ...current, nodes: current.nodes.filter(node => !subtree.has(node.id)) }))
     select(null)
   }
+  function copy(cut = false) {
+    if (!selected) return
+    setClipboard(copyObject(project, selected))
+    if (cut) remove()
+    setMessage(cut ? 'Object geknipt.' : 'Object gekopieerd.')
+  }
+  function insert(clip: ObjectClip, parent: string | null, offset: number) {
+    const clone = cloneObject(clip, parent, offset)
+    edit(current => ({ ...current, nodes: [...current.nodes, ...clone.nodes] }))
+    select(clone.id)
+  }
+  function paste() {
+    if (clipboard) insert(clipboard, selected?.kind === 'group' ? selected.id : selected?.parent ?? null, 0)
+  }
+  function duplicate() {
+    if (selected) insert(copyObject(project, selected), selected.parent, 0.25)
+  }
+  function toggleVisibility(node: ModelNode) {
+    updateNode(node.id, { hidden: !node.hidden })
+  }
   function save() {
     try {
       localStorage.setItem(storageKey, JSON.stringify(project))
@@ -98,6 +128,12 @@ function App() {
       setMessage('Bewaren mislukt. Browseropslag is vol of uitgeschakeld.')
     }
   }
+  useEffect(() => {
+    if (saveRequested) {
+      save()
+      requestSave(false)
+    }
+  })
   async function runExport(godot: boolean) {
     setExporting(true)
     setMessage('Export wordt voorbereid…')
@@ -140,19 +176,39 @@ function App() {
 
   useEffect(() => {
     function shortcut(event: KeyboardEvent) {
-      if (event.target instanceof HTMLElement &&
-        event.target.closest('input, select, textarea, [contenteditable]')) return
+      const editing = event.target instanceof HTMLElement &&
+        event.target.closest('input, select, textarea, [contenteditable]')
       const key = event.key.toLowerCase()
+      if (event.defaultPrevented || event.isComposing || event.getModifierState('AltGraph')) return
       if (event.ctrlKey || event.metaKey) {
-        if (key === 'z' || key === 'y') {
-          event.preventDefault()
-          stepHistory(key === 'y' || event.shiftKey)
-        }
         if (key === 's') {
           event.preventDefault()
-          save()
+          if (event.repeat) return
+          if (editing && document.activeElement instanceof HTMLElement) document.activeElement.blur()
+          requestSave(true)
+          return
         }
-      } else if (key === 'delete') remove()
+        if (editing) return
+        const commands: Record<string, () => void> = {
+          z: () => stepHistory(event.shiftKey),
+          y: () => stepHistory(true),
+          c: () => copy(),
+          x: () => copy(true),
+          v: paste,
+          d: duplicate,
+        }
+        if (Object.hasOwn(commands, key)) {
+          event.preventDefault()
+          if (!event.repeat) commands[key]()
+        } else if (['f', 'g', 'r', 'p', 'u', 'a', '+', '-', '=', '0'].includes(key)) {
+          event.preventDefault()
+        }
+        return
+      }
+      if (editing || event.altKey || event.repeat) return
+      if (key === 'delete') remove()
+      else if (key === 'escape') select(null)
+      else if (key === 'h' && selected) toggleVisibility(selected)
       else if (key === 'g') setMode('translate')
       else if (key === 'r') setMode('rotate')
       else if (key === 's') setMode('scale')
@@ -161,10 +217,10 @@ function App() {
     return () => window.removeEventListener('keydown', shortcut)
   })
 
-  const hasMesh = project.nodes.some(node => node.kind !== 'group')
+  const hasMesh = project.nodes.some(node => node.kind !== 'group' && isVisible(project.nodes, node))
   return <>
     <header className="top">
-      <div className="brand"><div aria-hidden="true">RS</div><span>RS2 <strong>Modelengine</strong><small>3D STUDIO</small></span></div>
+      <div className="brand"><div aria-hidden="true">RS</div><span>RS2 <strong>Modelengine</strong></span></div>
       <input aria-label="Projectnaam" className="project-name" key={project.name} defaultValue={project.name}
         onKeyDown={event => { if (event.key === 'Enter') event.currentTarget.blur() }}
         onBlur={event => {
@@ -178,18 +234,18 @@ function App() {
         <button className="primary" disabled={exporting || !hasMesh} onClick={() => void runExport(true)}>Godot-pakket</button>
       </div>
     </header>
+    <div className="command-bar" role="group" aria-label="Object bewerken">
+      <button disabled={!selected} onClick={duplicate}>Dupliceren <kbd>Ctrl+D</kbd></button>
+      <button disabled={!selected} onClick={() => copy()}>Kopiëren <kbd>Ctrl+C</kbd></button>
+      <button disabled={!selected} onClick={() => copy(true)}>Knippen <kbd>Ctrl+X</kbd></button>
+      <button disabled={!clipboard} onClick={paste}>Plakken <kbd>Ctrl+V</kbd></button>
+    </div>
     <main className="workspace">
-      <aside className="sidebar">
-        <section>
-          <h2>Toevoegen</h2>
-          <div className="primitives">{(Object.keys(kinds) as Kind[]).map(kind =>
-            <button key={kind} onClick={() => add(kind)}><span aria-hidden="true">{symbols[kind]}</span>{kinds[kind]}</button>,
-          )}</div>
-        </section>
+      <aside className="sidebar outliner">
         <section>
           <h2>Objectboom <span className="count">{project.nodes.length}</span></h2>
           {project.nodes.length ? <ObjectTree nodes={project.nodes} parent={null}
-            selected={selected?.id ?? null} onSelect={select} /> : <p>Voeg een vorm of groep toe.</p>}
+            selected={selected?.id ?? null} onSelect={select} onVisibility={toggleVisibility} /> : <p>Voeg een vorm of groep toe.</p>}
         </section>
       </aside>
       <section className="stage" aria-label="Werkgebied">
@@ -206,7 +262,16 @@ function App() {
             <button title="Opnieuw uitvoeren" aria-label="Opnieuw uitvoeren" disabled={!history.future.length} onClick={() => stepHistory(true)}>↷</button>
           </div>
         </div>
-        <Viewport project={project} selected={selected?.id ?? null} mode={mode} onSelect={select} onTransform={updateNode} />
+        <div className="primitive-bar" role="group" aria-label="Toevoegen">{(Object.keys(kinds) as Kind[]).map(kind =>
+          <button key={kind} onClick={() => add(kind)}><span aria-hidden="true">{symbols[kind]}</span>{kinds[kind]}</button>,
+        )}</div>
+        <Viewport project={project} selected={selected?.id ?? null} mode={mode} options={options} onSelect={select} onTransform={updateNode} />
+        <div className="view-bar" role="group" aria-label="Weergaveopties">
+          {(Object.keys(viewLabels) as (keyof ViewOptions)[]).map(option =>
+            <button key={option} aria-pressed={options[option]} onClick={() =>
+              setOptions(current => ({ ...current, [option]: !current[option] }))}>{viewLabels[option]}</button>,
+          )}
+        </div>
       </section>
       <aside className="inspector sidebar" aria-label="Eigenschappen">
         <section>

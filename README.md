@@ -20,6 +20,14 @@ Stel basiskleur, ruwheid en metaalheid in. Per object kun je één PNG- of JPEG-
 
 **Lokaal bewaren** slaat één project per browserprofiel en site op. Het project opent opnieuw als je de editor herlaadt. De geschiedenis geldt voor de huidige sessie.
 
+## Objecten bewerken
+
+Gebruik **Ctrl+D** om een object of groep met inhoud te dupliceren. **Ctrl+C**, **Ctrl+X** en **Ctrl+V** kopiëren, knippen en plakken binnen de editor. Een duplicaat komt naast het origineel in dezelfde groep. Plakken voegt een kopie toe aan de geselecteerde groep, of op hetzelfde niveau als het geselecteerde object. Het klembord geldt voor het huidige tabblad en wordt geleegd bij herladen.
+
+Gebruik **H** of de knop naast een object om het te tonen of te verbergen. Verborgen objecten blijven in je project en worden overgeslagen bij het exporteren van het model. Onder het werkgebied kun je het raster, snapping, lokale assen en draadmodelweergave instellen. Snapping gebruikt stappen van 0,25 m, 15° en 0,25 schaalpunt.
+
+Editorsneltoetsen hebben voorrang buiten invoervelden als de browser ze doorgeeft. In invoervelden blijven de gebruikelijke sneltoetsen voor tekstbewerking beschikbaar. Sneltoetsen die de browser of het systeem zelf afhandelt, zoals tabblad sluiten, blijven beschikbaar.
+
 ## Exporteren naar Godot 4
 
 **GLB exporteren** downloadt het model met hiërarchie, transformaties, PBR-materialen en ingesloten texturen. **Godot-pakket** maakt een ZIP met deze structuur.
@@ -43,6 +51,6 @@ Een push naar `modelengine` start de build- en Pages-workflow. Stel bij **Settin
 
 - GLB/glTF-import, meerdere projecten en presets openen vanuit bestanden.
 - Mesh- en UV-bewerking, extra textuurkanalen en materiaalbibliotheken.
-- Meervoudige selectie, dupliceren, snapping en orthografische aanzichten.
+- Meervoudige selectie en orthografische aanzichten.
 - Keyframes, een animatietijdlijn, vloeiende interpolatie en animatie-export.
 - Godot-specifieke scènes, colliders en metadata voor levels. Levelbouw en gameplay horen bij de latere gamefase.

@@ -4,12 +4,16 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { TransformControls } from 'three/addons/controls/TransformControls.js'
 import type { Mode, ModelNode, Project } from './model'
 import { makeScene } from './scene'
+import { isVisible } from './model'
+
+export type ViewOptions = { grid: boolean; snap: boolean; local: boolean; wireframe: boolean }
 
 type Transform = Pick<ModelNode, 'position' | 'rotation' | 'scale'>
 type Props = {
   project: Project
   selected: string | null
   mode: Mode
+  options: ViewOptions
   onSelect: (id: string | null) => void
   onTransform: (id: string, transform: Transform) => void
 }
@@ -18,7 +22,7 @@ export function Viewport(props: Props) {
   const host = useRef<HTMLDivElement>(null)
   const latest = useRef(props)
   latest.current = props
-  const runtime = useRef<{ refresh: () => void; focus: () => void }>(null)
+  const runtime = useRef<{ refresh: () => void; focus: () => void; reset: () => void }>(null)
   const [error, setError] = useState('')
 
   useEffect(() => {
@@ -38,11 +42,13 @@ export function Viewport(props: Props) {
     scene.background = new THREE.Color('#151d2a')
     scene.fog = new THREE.FogExp2('#151d2a', 0.035)
     const camera = new THREE.PerspectiveCamera(48, 1, 0.01, 500)
-    camera.position.set(4.4, 3.5, 5.6)
     const orbit = new OrbitControls(camera, renderer.domElement)
-    orbit.target.set(0, 0.45, 0)
     orbit.enableDamping = true
+    function reset() { orbit.reset() }
+    camera.position.set(4.4, 3.5, 5.6)
+    orbit.target.set(0, 0.45, 0)
     orbit.update()
+    orbit.saveState()
     const gizmo = new TransformControls(camera, renderer.domElement)
     gizmo.setSize(0.85)
     scene.add(gizmo.getHelper())
@@ -67,7 +73,7 @@ export function Viewport(props: Props) {
     let source: Project | undefined
     let model: ReturnType<typeof makeScene> | undefined
     function refresh() {
-      const { project, selected, mode } = latest.current
+      const { project, selected, mode, options } = latest.current
       if (source !== project) {
         gizmo.detach()
         if (model) {
@@ -83,8 +89,17 @@ export function Viewport(props: Props) {
         })
         scene.add(model.root)
       }
+      grid.visible = options.grid
+      model?.root.traverse(object => {
+        if (object instanceof THREE.Mesh) object.material.wireframe = options.wireframe
+      })
       gizmo.setMode(mode)
-      const object = selected && model?.objects.get(selected)
+      gizmo.setSpace(options.local ? 'local' : 'world')
+      gizmo.setTranslationSnap(options.snap ? 0.25 : null)
+      gizmo.setRotationSnap(options.snap ? Math.PI / 12 : null)
+      gizmo.setScaleSnap(options.snap ? 0.25 : null)
+      const node = project.nodes.find(node => node.id === selected)
+      const object = node && isVisible(project.nodes, node) && model?.objects.get(node.id)
       if (object) gizmo.attach(object)
       else gizmo.detach()
     }
@@ -100,7 +115,7 @@ export function Viewport(props: Props) {
       camera.position.copy(center).addScaledVector(direction, radius * 3.5)
       orbit.update()
     }
-    runtime.current = { refresh, focus }
+    runtime.current = { refresh, focus, reset }
     refresh()
 
     const ray = new THREE.Raycaster()
@@ -119,7 +134,11 @@ export function Viewport(props: Props) {
         (event.clientX - rect.left) / rect.width * 2 - 1,
         1 - (event.clientY - rect.top) / rect.height * 2,
       ), camera)
-      const hit = ray.intersectObject(model.root, true)[0]
+      const { nodes } = latest.current.project
+      const hit = ray.intersectObject(model.root, true).find(({ object }) => {
+        const node = nodes.find(node => node.id === object.userData.editorId)
+        return node && isVisible(nodes, node)
+      })
       latest.current.onSelect(hit?.object.userData.editorId ?? null)
     }
     renderer.domElement.addEventListener('pointerdown', pointerDown)
@@ -153,12 +172,15 @@ export function Viewport(props: Props) {
     }
   }, [])
 
-  useEffect(() => { runtime.current?.refresh() }, [props.project, props.selected, props.mode])
+  useEffect(() => { runtime.current?.refresh() }, [props.project, props.selected, props.mode, props.options])
 
   return <div className="viewport" ref={host}>
     <div className="view-label"><span /> PERSPECTIEF</div>
     {error && <p role="status" className="viewport-error">{error}</p>}
-    <button className="focus" onClick={() => runtime.current?.focus()}>Centreren</button>
+    <div className="focus tools">
+      <button onClick={() => runtime.current?.focus()}>Centreren</button>
+      <button onClick={() => runtime.current?.reset()}>Camera herstellen</button>
+    </div>
     <div className="view-help">Slepen · draaien &nbsp; / &nbsp; Scrollen · zoomen &nbsp; / &nbsp; Rechtermuisknop · verschuiven</div>
     <div className="axes" aria-hidden="true"><b>X</b><b>Y</b><b>Z</b></div>
   </div>

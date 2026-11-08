@@ -1,7 +1,7 @@
 import * as THREE from 'three'
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js'
 import { strToU8, zipSync } from 'fflate'
-import type { Kind, ModelNode, Project } from './model'
+import { isVisible, type Kind, type ModelNode, type Project } from './model'
 
 const geometries: Record<Exclude<Kind, 'group'>, () => THREE.BufferGeometry> = {
   box: () => new THREE.BoxGeometry(),
@@ -10,6 +10,15 @@ const geometries: Record<Exclude<Kind, 'group'>, () => THREE.BufferGeometry> = {
   cone: () => new THREE.ConeGeometry(0.5, 1, 32),
   plane: () => new THREE.PlaneGeometry(1, 1),
   torus: () => new THREE.TorusGeometry(0.36, 0.14, 16, 48),
+  capsule: () => new THREE.CapsuleGeometry(0.3, 0.4, 8, 24),
+  wedge: () => {
+    const profile = new THREE.Shape()
+    profile.moveTo(-0.5, -0.5)
+    profile.lineTo(0.5, -0.5)
+    profile.lineTo(0.5, 0.5)
+    profile.closePath()
+    return new THREE.ExtrudeGeometry(profile, { depth: 1, bevelEnabled: false }).translate(0, 0, -0.5)
+  },
 }
 
 export function makeScene(project: Project) {
@@ -42,6 +51,7 @@ export function makeScene(project: Project) {
       }),
     )
     object.name = node.name
+    object.visible = !node.hidden
     object.position.fromArray(node.position)
     object.rotation.set(...node.rotation.map(THREE.MathUtils.degToRad) as ModelNode['rotation'])
     object.scale.fromArray(node.scale)
@@ -77,7 +87,7 @@ function download(name: string, bytes: Uint8Array<ArrayBuffer>, type: string) {
 }
 
 export async function exportProject(project: Project, godot: boolean) {
-  const scene = makeScene(project)
+  const scene = makeScene({ ...project, nodes: project.nodes.filter(node => isVisible(project.nodes, node)) })
   const slug = project.name.toLowerCase().normalize('NFKD').replace(/[^a-z0-9_-]+/g, '-')
     .replace(/^-+|-+$/g, '') || 'rs2-model'
   try {
