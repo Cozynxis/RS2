@@ -157,7 +157,7 @@ export function CreatorViewport(props: Props) {
   useEffect(() => { if (props.focus) runtime.current?.camera(true) }, [props.focus])
 
   return <div className="creator-viewport" ref={container}>
-    <span className="creator-viewport-label">{cameras[props.view]} · {props.frame} f</span>
+    <span className="creator-viewport-label">{cameras[props.view]} · {Math.round(props.frame)} f</span>
     {error && <p role="alert">Voor het 3D-voorbeeld is WebGL 2 nodig.</p>}
   </div>
 }

@@ -31,24 +31,38 @@ function Menu({ label, children }: { label: string; children: ReactNode }) {
   </details>
 }
 
-function ObjectTree({ nodes, parent, selected, onSelect, onVisibility }: {
+function ObjectTree({ nodes, parent, selected, onSelect, onVisibility, collapsed, onToggle, onMove }: {
   nodes: ModelNode[]
   parent: string | null
   selected: string | null
   onSelect: (id: string) => void
   onVisibility: (node: ModelNode) => void
+  collapsed: Set<string>
+  onToggle: (id: string) => void
+  onMove: (id: string, parent: string | null) => void
 }) {
   return <ul className="tree">
     {nodes.filter(node => node.parent === parent).map(node => <li key={node.id}>
-      <div className={`tree-row${isVisible(nodes, node) ? '' : ' hidden-node'}`}>
-        <button aria-pressed={selected === node.id} onClick={() => onSelect(node.id)}>
+      <div className={`tree-row${isVisible(nodes, node) ? '' : ' hidden-node'}`}
+        onDragOver={event => { if (node.kind === 'group' && event.dataTransfer.types.includes('application/x-rs2-node')) event.preventDefault() }}
+        onDrop={event => {
+          if (node.kind !== 'group') return
+          event.preventDefault()
+          event.stopPropagation()
+          onMove(event.dataTransfer.getData('application/x-rs2-node'), node.id)
+        }}>
+        {node.kind === 'group' ? <button className="tree-fold" aria-label={`${node.name} ${collapsed.has(node.id) ? 'uitklappen' : 'inklappen'}`}
+          aria-expanded={!collapsed.has(node.id)} onClick={() => onToggle(node.id)}>{collapsed.has(node.id) ? '▸' : '▾'}</button> : <span className="tree-spacer" />}
+        <button draggable aria-pressed={selected === node.id} onClick={() => onSelect(node.id)}
+          onDragStart={event => { event.dataTransfer.setData('application/x-rs2-node', node.id); event.dataTransfer.effectAllowed = 'move' }}>
           <span aria-hidden="true">{symbols[node.kind]}</span> {node.name}{node.locked && <span title="Transformatie vergrendeld"> ⌑</span>}
         </button>
         <button className="visibility" title={node.hidden ? 'Tonen' : 'Verbergen'}
           aria-label={`${node.name} ${node.hidden ? 'tonen' : 'verbergen'}`}
           onClick={() => onVisibility(node)}>{node.hidden ? '◌' : '◉'}</button>
       </div>
-      {node.kind === 'group' && <ObjectTree {...{ nodes, parent: node.id, selected, onSelect, onVisibility }} />}
+      {node.kind === 'group' && !collapsed.has(node.id) &&
+        <ObjectTree {...{ nodes, parent: node.id, selected, onSelect, onVisibility, collapsed, onToggle, onMove }} />}
     </li>)}
   </ul>
 }
@@ -88,6 +102,8 @@ function App() {
   const [animate, setAnimate] = useState(false)
   const [previewTime, setPreviewTime] = useState<number | null>(null)
   const [search, setSearch] = useState('')
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set())
+  const [inspectorTab, setInspectorTab] = useState<'transform' | 'element'>('transform')
   const selected = project.nodes.find(node => node.id === selectedId)
   const subtree = selected && descendants(project.nodes, selected.id)
 
@@ -118,6 +134,19 @@ function App() {
     const node = createNode(kind, selected?.kind === 'group' ? selected.id : null)
     edit(current => ({ ...current, nodes: [...current.nodes, node] }))
     select(node.id)
+    if (node.parent) setCollapsed(current => new Set([...current].filter(id => id !== node.parent)))
+  }
+  function moveNode(id: string, parent: string | null) {
+    const node = project.nodes.find(item => item.id === id)
+    if (!node || node.parent === parent || (parent && descendants(project.nodes, id).has(parent))) return
+    updateNode(id, { parent })
+    if (parent) setCollapsed(current => new Set([...current].filter(id => id !== parent)))
+  }
+  function groupSelection() {
+    if (!selected) return
+    const group = createNode('group', selected.parent)
+    edit(current => ({ ...current, nodes: [...current.nodes.map(node => node.id === selected.id ? { ...node, parent: group.id } : node), group] }))
+    select(group.id)
   }
   function remove() {
     if (!subtree) return
@@ -350,14 +379,6 @@ function App() {
       </div>
     </div>
     <main className="workspace">
-      <aside className="sidebar outliner">
-        <section>
-          <h2>Objectboom <span className="count">{project.nodes.length}</span></h2>
-          <label className="outliner-search">Zoeken<input type="search" value={search} onChange={event => setSearch(event.target.value)} placeholder="Objectnaam…" /></label>
-          {tree.length ? <ObjectTree nodes={tree} parent={null}
-            selected={selected?.id ?? null} onSelect={select} onVisibility={toggleVisibility} /> : <p>{query ? 'Geen resultaten.' : 'Voeg een vorm of groep toe.'}</p>}
-        </section>
-      </aside>
       <section className="stage" aria-label="Werkgebied">
         <div className="toolbar">
           <div className="tools" role="group" aria-label="Transformaties">
@@ -386,7 +407,13 @@ function App() {
           onPose={updateNode} onKeys={(id, keys) => updateNode(id, { keys })}
           onInterpolation={interpolation => edit(current => ({ ...current, interpolation }))} />}
       </section>
-      <aside className="inspector sidebar" aria-label="Eigenschappen">
+      <aside className="inspector sidebar model-dock" aria-label="Eigenschappen en objectboom">
+        <div className="dock-tabs" role="group" aria-label="Eigenschappenpanelen">
+          <button aria-pressed={inspectorTab === 'transform'} onClick={() => setInspectorTab('transform')}>Transform</button>
+          <button aria-pressed={inspectorTab === 'element'} onClick={() => setInspectorTab('element')}>Element</button>
+        </div>
+        <div className="dock-properties">
+        {inspectorTab === 'element' && <>
         <section>
           <h2>Eigenschappen</h2>
           {selected ? <div key={selected.id} className="fields">
@@ -398,7 +425,7 @@ function App() {
                 if (name !== selected.name) updateNode(selected.id, { name })
               }} /></label>
             <label>Bovenliggende groep<select value={selected.parent ?? ''} onChange={event =>
-              updateNode(selected.id, { parent: event.target.value || null })}>
+              moveNode(selected.id, event.target.value || null)}>
               <option value="">Scène</option>
               {project.nodes.filter(node => node.kind === 'group' && !subtree?.has(node.id))
                 .map(node => <option key={node.id} value={node.id}>{node.name}</option>)}
@@ -406,7 +433,8 @@ function App() {
             <button className="danger" onClick={remove}>{selected.kind === 'group' ? 'Groep met inhoud verwijderen' : 'Object verwijderen'}</button>
           </div> : <p>Selecteer een object in de scène of objectboom.</p>}
         </section>
-        {selected && <section key={selected.id}>
+        </>}
+        {inspectorTab === 'transform' && selected && <section key={selected.id}>
           <h2>Transformatie</h2>
           {([['position', 'Positie (m)'], ['rotation', 'Rotatie (°)'], ['scale', 'Schaal']] as const).map(([field, label]) =>
             <fieldset key={field} disabled={selected.locked}><legend>{label}</legend><div className="vector">
@@ -423,8 +451,10 @@ function App() {
             const { position, rotation, scale } = createNode(selected.kind, selected.parent)
             updateNode(selected.id, { position, rotation, scale })
           }}>Transformatie herstellen</button>
+          {selected.kind === 'group' && <button onClick={() => setAnimate(true)}>Groep animeren</button>}
         </section>}
-        {selected && selected.kind !== 'group' && <section key={`material-${selected.id}`}>
+        {inspectorTab === 'transform' && !selected && <section><p>Selecteer een object of groep.</p></section>}
+        {inspectorTab === 'element' && selected && selected.kind !== 'group' && <section key={`material-${selected.id}`}>
           <h2>Materiaal</h2>
           <div className="fields">
             <label>Materiaalpreset<select value="" onChange={event => {
@@ -459,6 +489,32 @@ function App() {
             </div></fieldset>}
           </div>
         </section>}
+        </div>
+        <section className="dock-tree">
+          <h2>Omlijning <span className="count">{tree.length}/{project.nodes.length}</span></h2>
+          <div className="dock-tools">
+            <button onClick={() => add('box')}>＋ Kubus</button>
+            <button onClick={() => add('group')}>＋ Groep</button>
+            <button disabled={!selected} onClick={groupSelection}>Groeperen</button>
+            <button disabled={!selected} onClick={() => setAnimate(true)}>Animeren</button>
+            <button title="Alle groepen uitklappen" onClick={() => setCollapsed(new Set())}>▾</button>
+            <button title="Alle groepen inklappen" onClick={() => setCollapsed(new Set(project.nodes.filter(node => node.kind === 'group').map(node => node.id)))}>▸</button>
+          </div>
+          <label className="outliner-search">Zoeken<input type="search" value={search} onChange={event => setSearch(event.target.value)} placeholder="Objectnaam…" /></label>
+          <div className="dock-tree-list">
+            {tree.length ? <ObjectTree nodes={tree} parent={null} selected={selected?.id ?? null} onSelect={select}
+              onVisibility={toggleVisibility} collapsed={query ? new Set() : collapsed} onMove={moveNode}
+              onToggle={id => setCollapsed(current => {
+                const next = new Set(current)
+                if (!next.delete(id)) next.add(id)
+                return next
+              })} /> : <p>{query ? 'Geen resultaten.' : 'Voeg een vorm of groep toe.'}</p>}
+          </div>
+          <button className="dock-root" onDragOver={event => {
+            if (event.dataTransfer.types.includes('application/x-rs2-node')) event.preventDefault()
+          }} onDrop={event => { event.preventDefault(); moveNode(event.dataTransfer.getData('application/x-rs2-node'), null) }}
+            onClick={() => { if (selected) moveNode(selected.id, null) }}>↳ Naar scèneniveau</button>
+        </section>
       </aside>
     </main>
     {exporting && <ExportDialog project={project} selected={selected} onClose={() => setExporting(false)} onExport={setMessage} />}

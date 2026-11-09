@@ -1,9 +1,38 @@
-import type { PointerEvent } from 'react'
+import { useRef, useState, type PointerEvent } from 'react'
 import { channels, trackId, type Clip, type Track } from './creatorModel'
 
-export function CreatorTimeline({ clip, frame, zoom, selected, label, onFrame, onSelect }: {
+function KeyMarker({ frame, end, label, active, onMove }: {
+  frame: number; end: number; label: string; active: boolean; onMove: (frame: number) => void;
+}) {
+  const [draft, setDraft] = useState<number>()
+  const drag = useRef<{ x: number; width: number } | undefined>(undefined)
+  function position(event: PointerEvent<HTMLButtonElement>) {
+    const start = drag.current!
+    return Math.min(end, Math.max(0, frame + Math.round((event.clientX - start.x) / start.width * end)))
+  }
+  return <button className="creator-key" aria-label={label} aria-pressed={active} title={`Frame ${draft ?? frame}`}
+    style={{ left: `${(draft ?? frame) / end * 100}%` }} onPointerDown={event => {
+      if (event.button !== 0) return
+      event.stopPropagation()
+      const width = event.currentTarget.parentElement?.clientWidth ?? 0
+      if (!width) return
+      drag.current = { x: event.clientX, width }
+      event.currentTarget.setPointerCapture(event.pointerId)
+    }} onPointerMove={event => { if (drag.current) setDraft(position(event)) }}
+    onPointerUp={event => {
+      if (!drag.current) return
+      const next = position(event)
+      drag.current = undefined
+      setDraft(undefined)
+      onMove(next)
+    }} onLostPointerCapture={() => { drag.current = undefined; setDraft(undefined) }}
+    onClick={event => { if (event.detail === 0) onMove(frame) }}>◆</button>
+}
+
+export function CreatorTimeline({ clip, frame, zoom, selected, label, onFrame, onSelect, onMove }: {
   clip: Clip; frame: number; zoom: number; selected?: string; label: (track: Track) => string;
   onFrame: (frame: number) => void; onSelect: (track: Track) => void;
+  onMove: (track: Track, from: number, to: number) => void;
 }) {
   const tick = Math.max(1, Math.ceil(clip.frames / (10 * zoom)))
   const ticks = Array.from({ length: Math.floor(clip.frames / tick) + 1 }, (_, index) => index * tick)
@@ -27,11 +56,10 @@ export function CreatorTimeline({ clip, frame, zoom, selected, label, onFrame, o
         </button>
         <div className="creator-track-lane" onPointerDown={seek}>
           <i className="playhead" style={{ left: percent(frame) }} />
-          {track.keys.map(key => <button key={key.frame} className="creator-key"
-            aria-label={`${label(track)} ${channels[track.channel]} frame ${key.frame}`}
-            aria-pressed={key.frame === frame && trackId(track) === selected}
-            style={{ left: percent(key.frame) }} onPointerDown={event => event.stopPropagation()}
-            onClick={() => { onSelect(track); onFrame(key.frame) }}>◆</button>)}
+          {track.keys.map(key => <KeyMarker key={key.frame} frame={key.frame} end={clip.frames}
+            label={`${label(track)} ${channels[track.channel]} frame ${key.frame}`}
+            active={key.frame === frame && trackId(track) === selected}
+            onMove={next => { onSelect(track); onMove(track, key.frame, next) }} />)}
         </div>
       </div>)}
       {!clip.tracks.length && <p>Kies een object en neem een keyframe op om een track te maken.</p>}

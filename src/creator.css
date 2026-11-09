@@ -43,7 +43,9 @@
 .creator-key {
   position: absolute; transform: translateX(-50%); z-index: 1; top: 4px;
   padding: 0 4px; border-radius: 3px; font-size: 11px; color: #f2ca73;
+  cursor: grab; touch-action: none;
 }
+.creator-key:active { cursor: grabbing; z-index: 2; }
 .creator-targets { list-style: none; margin: 6px 0; padding: 0; }
 .creator-targets button { width: 100%; text-align: left; overflow-wrap: anywhere; padding-block: 4px; }
 .creator-targets li + li { margin-top: 3px; }

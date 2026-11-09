@@ -55,6 +55,10 @@ Gebruik **Spatie** voor afspelen, **pijltjes** om frames te stappen en **Shift+p
 
 ### Snelle tijdlijn in de modeleditor
 
+In het rechterpaneel wissel je tussen **Transform** en **Element**. Onder **Omlijning** kun je groepen uitklappen, objecten zoeken, een selectie groeperen of objecten naar een groep slepen. Een groepswijziging behoudt de lokale transformatie. Selecteer de groep zelf en klik op **Groep animeren** om haar positie, rotatie of schaal vast te leggen. De inhoud beweegt mee.
+
+In de Animation Creator kun je de diamanten op de tijdlijn naar een vrij frame slepen. **Heen en terug** speelt een herhalende clip om en om voorwaarts en achterwaarts af. De 3D-preview interpoleert tijdens het afspelen tussen de projectframes.
+
 Open **Animeren** in het werkblad. Selecteer een object of groep, zet de tijdcursor op een tijdstip en klik op **Keyframe opnemen** om de huidige positie, rotatie en schaal vast te leggen. Neem op andere tijdstippen nieuwe poses op. Met **Voorbeeld tonen** bekijk je de pose op de cursor. **Afspelen** laat de animatie herhalen. Met **Pose bewerken** keer je terug naar de bewerkbare scène. De interpolatie geldt voor het hele project. Bij vloeiende interpolatie worden tussenposes gebakken op de ingestelde beeldsnelheid.
 
 ## Exporteren naar Godot 4

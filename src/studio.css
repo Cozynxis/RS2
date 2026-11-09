@@ -83,6 +83,70 @@ button { transition: background-color 140ms, border-color 140ms, color 140ms; }
 .export-dialog fieldset { padding: 10px; }
 .export-dialog footer { justify-content: flex-end; padding: 10px 0 0; background: transparent; border: 0; }
 .dialog-error { color: #ffb0a9; }
+.studio-shell .workspace {
+  grid-template-columns: minmax(0, 1fr) 300px;
+  grid-template-areas: "stage inspector";
+}
+.studio-shell .model-dock { display: flex; flex-direction: column; background: #20242c; }
+.dock-tabs, .dock-tools { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.dock-tabs { background: #191d24; padding: 4px; border-bottom: 1px solid var(--edge); }
+.dock-tabs button { background: transparent; border-color: transparent; border-radius: 0; padding: 6px 9px; }
+.dock-tabs button[aria-pressed="true"] { border-bottom-color: var(--accent); }
+.dock-properties { min-height: 145px; max-height: 49%; overflow: auto; flex-shrink: 0; }
+.model-dock .dock-tree { flex: 1; min-height: 170px; display: flex; flex-direction: column; padding: 10px 8px; border-top: 1px solid var(--edge); }
+.dock-tree h2 { display: flex; justify-content: space-between; margin-bottom: 6px; }
+.dock-tools { margin-bottom: 7px; }
+.dock-tools button, .dock-root { padding: 3px 5px; font-size: 11px; }
+.dock-tree-list { min-height: 60px; overflow: auto; flex: 1; background: #191d24; padding: 3px; border-radius: 4px; }
+.dock-root { margin-top: 6px; align-self: flex-start; }
+.dock-tree .tree-row { grid-template-columns: 20px minmax(0, 1fr) 28px; gap: 2px; }
+.dock-tree .tree-row button { padding: 3px 4px; }
+.dock-tree .tree-fold { text-align: center; color: var(--muted); }
+.dock-tree .tree li { margin-top: 2px; }
+.dock-tree .tree .tree { margin-left: 10px; }
+.launchpad { width: min(100% - 32px, 1100px); margin-top: clamp(18px, 5vh, 56px); }
+.launchbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 0 4px 14px; }
+.launchbar strong { display: flex; align-items: center; gap: 8px; }
+.launchbar strong span { background: #8bb8ff; color: #142337; border-radius: 6px; padding: 4px; }
+.launchbar > span, .launch-section-heading > span { color: var(--muted); font-size: 10px; letter-spacing: .15em; }
+.launch-hero {
+  isolation: isolate; min-height: 330px; padding: clamp(22px, 5vw, 54px);
+  background: radial-gradient(ellipse at 74% 40%, #263665 0, transparent 49%), linear-gradient(122deg, #161d30, #141824);
+}
+.launch-hero h1 { margin-block: 8px 13px; font-size: clamp(40px, 7vw, 80px); letter-spacing: -.055em; }
+.launch-hero h1 em { color: #9bbfff; font-style: normal; }
+.launch-actions { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 20px; }
+.launch-actions button span { margin-left: 4px; }
+.launch-art { position: absolute; inset: 0 0 0 45%; display: grid; place-items: center; perspective: 650px; pointer-events: none; }
+.launch-art > span { position: absolute; right: 18px; bottom: 14px; color: #a4b7d6; font: 10px monospace; letter-spacing: .14em; }
+.launch-orbit { position: absolute; width: 66%; aspect-ratio: 1; border: 1px solid #6e90dd59; border-radius: 50%; transform: rotateX(59deg) rotateZ(-30deg); box-shadow: 0 0 24px #6a82ef2c; }
+.orbit-inner { width: 46%; border-style: dashed; transform: rotateX(58deg) rotateZ(25deg); }
+.launch-floor {
+  position: absolute; z-index: -1; width: 96%; height: 66%; bottom: -26%;
+  background-image: linear-gradient(#8bb8ff37 1px, transparent 1px), linear-gradient(90deg, #8bb8ff37 1px, transparent 1px);
+  background-size: 24px 24px; transform: rotateX(58deg); mask-image: radial-gradient(ellipse, black, transparent 72%);
+}
+.launch-cube { position: relative; width: 104px; height: 104px; transform-style: preserve-3d; transform: rotateX(-24deg) rotateY(35deg); animation: launch-spin 16s linear infinite; }
+.launch-cube i {
+  position: absolute; inset: 0; border: 2px solid #9bd9ff; border-radius: 4px;
+  background: linear-gradient(140deg, #3e83fe9c, #512ad1a8); box-shadow: inset 0 0 30px #72d4ff88;
+}
+.launch-cube i:nth-child(1) { transform: translateZ(52px); }
+.launch-cube i:nth-child(2) { transform: rotateY(90deg) translateZ(52px); }
+.launch-cube i:nth-child(3) { transform: rotateY(180deg) translateZ(52px); }
+.launch-cube i:nth-child(4) { transform: rotateY(-90deg) translateZ(52px); }
+.launch-cube i:nth-child(5) { transform: rotateX(90deg) translateZ(52px); }
+.launch-cube i:nth-child(6) { transform: rotateX(-90deg) translateZ(52px); }
+@keyframes launch-spin {
+  from { transform: translateY(-10px) rotateX(-24deg) rotateY(35deg); }
+  to { transform: translateY(-10px) rotateX(-24deg) rotateY(395deg); }
+}
+@keyframes studio-enter { from { opacity: 0; transform: translateY(7px); } to { opacity: 1; transform: translateY(0); } }
+.launchpad > *, .dock-properties > section { animation: studio-enter 220ms ease-out both; }
+.launch-section-heading { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.launch-projects .project-card { position: relative; min-height: 132px; transition: transform 150ms, background-color 150ms, border-color 150ms; }
+.launch-projects .project-card:hover { transform: translateY(-3px); border-color: var(--accent); }
+.launch-projects .project-card .card-arrow { position: absolute; right: 9px; top: 10px; color: var(--accent); }
 @media (min-width: 951px) and (min-height: 550px) {
   .studio-shell {
     display: grid; flex: none; height: 100dvh;
@@ -93,8 +157,17 @@ button { transition: background-color 140ms, border-color 140ms, color 140ms; }
   .studio-shell .viewport { min-height: 175px; }
 }
 @media (prefers-reduced-motion: reduce) { button { transition: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .launch-cube, .launchpad > *, .dock-properties > section { animation: none; }
+  .launch-projects .project-card { transition: none; }
+}
+@media (max-width: 950px) {
+  .studio-shell .workspace { grid-template-columns: minmax(0, 1fr); grid-template-areas: "stage" "inspector"; }
+  .dock-properties { max-height: none; }
+}
 @media (max-width: 590px) {
   .menu-bar { order: 2; flex-basis: 100%; flex-wrap: wrap; }
   .hero-grid { opacity: .45; }
   .form-grid { grid-template-columns: minmax(0, 1fr); }
+  .launch-art { opacity: .28; inset-inline-start: 42%; }
 }

@@ -34,11 +34,23 @@ export function ProjectHome({ current, onOpen, onCreate }: {
       fps: Number(form.get('fps') ?? 30),
     }))
   }
-  return <main className="home">
-    <header className="home-hero">
+  return <main className="home launchpad">
+    <div className="launchbar"><strong><span>RS</span> RS2 Studio</strong><span>MODEL · ANIMATIE · GFX</span></div>
+    <header className="home-hero launch-hero">
       <div><span className="eyebrow">ROLLING SKY 2 · WERKPLAATS</span>
-        <h1>RS2 Studio</h1><p>Maak modellen, animeer vormen en bouw onderdelen voor je eigen levels.</p></div>
-      <div className="hero-grid" aria-hidden="true"><ProjectIcon type="model" /></div>
+        <h1>Bouw je<br /><em>eigen wereld.</em></h1>
+        <p>Maak een model, breng het in beweging en bouw er je volgende level mee.</p>
+        {!type && <div className="launch-actions">
+          <button className="primary" onClick={() => choose('model')}>Nieuw model <span aria-hidden="true">↗</span></button>
+          <button onClick={() => choose('animation')}>Animation Creator <span aria-hidden="true">▶</span></button>
+        </div>}
+      </div>
+      <div className="launch-art" aria-hidden="true">
+        <div className="launch-orbit orbit-outer" /><div className="launch-orbit orbit-inner" />
+        <div className="launch-cube"><i /><i /><i /><i /><i /><i /></div>
+        <div className="launch-floor" />
+        <span>RS2 / WERKPLAATS</span>
+      </div>
     </header>
     {category && type ? <form className="project-setup fields" key={type} onSubmit={submit}>
       <button type="button" className="back-button" onClick={() => choose(undefined)}>← Projecttypes</button>
@@ -55,12 +67,12 @@ export function ProjectHome({ current, onOpen, onCreate }: {
       </div>
       <label>Notities <textarea name="notes" rows={3} maxLength={500} placeholder="Wat wil je maken?" /></label>
       <button className="primary" type="submit">Project maken</button>
-    </form> : <section className="home-projects">
-      <h2>Nieuw project</h2>
+    </form> : <section className="home-projects launch-projects">
+      <div className="launch-section-heading"><h2>Nieuw project</h2><span>KIES EEN WERKRUIMTE</span></div>
       <div className="project-cards">{(Object.keys(projectTypes) as ProjectType[]).map(key => {
         const item = projectTypes[key]
         return <button className={`project-card card-${key}`} key={key} onClick={() => choose(key)}>
-          <ProjectIcon type={key} /><strong>{item.label}</strong><span>{item.description}</span>
+          <ProjectIcon type={key} /><strong>{item.label}</strong><span>{item.description}</span><span className="card-arrow" aria-hidden="true">↗</span>
         </button>
       })}</div>
       <h2>Verder werken</h2>

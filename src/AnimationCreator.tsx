@@ -42,9 +42,10 @@ function Workspace({ initial, asset, onExit }: { initial: CreatorProject; asset:
   const [targetId, setTargetId] = useState(asset.targets[1]?.id ?? asset.targets[0]?.id)
   const [channel, setChannel] = useState<Channel>('position')
   const [playhead, setPlayhead] = useState(0)
-  const frame = Math.min(clip.frames, playhead)
+  const frame = Math.min(clip.frames, Math.round(playhead))
   const [playing, setPlaying] = useState(false)
   const [loop, setLoop] = useState(true)
+  const [pingPong, setPingPong] = useState(false)
   const [speed, setSpeed] = useState(1)
   const [zoom, setZoom] = useState(1)
   const [search, setSearch] = useState('')
@@ -163,6 +164,18 @@ function Workspace({ initial, asset, onExit }: { initial: CreatorProject; asset:
   function reverseTrack() {
     updateTrack(row => ({ ...row, keys: row.keys.map(item => ({ ...item, frame: clip.frames - item.frame })).reverse() }))
   }
+  function moveTimelineKey(row: Track, from: number, to: number) {
+    if (from === to) { seek(to); return }
+    const key = row.keys.find(item => item.frame === from)
+    if (!key || row.keys.some(item => item.frame === to)) {
+      setStatus('Op dat frame staat al een keyframe voor deze track.')
+      return
+    }
+    updateClip(item => ({ ...item, tracks: item.tracks.map(track =>
+      trackId(track) === trackId(row) ? keyAt({ ...track, keys: track.keys.filter(key => key.frame !== from) }, to, key.value) : track,
+    ) }))
+    seek(to)
+  }
   function save() {
     downloadFile(`${safeName(project.name)}.rs2-animation.json`, JSON.stringify(project), 'application/json')
     setSaved(project)
@@ -207,15 +220,15 @@ function Workspace({ initial, asset, onExit }: { initial: CreatorProject; asset:
           setPlaying(false)
           return
         }
-        position %= clip.frames
+        position %= pingPong ? clip.frames * 2 : clip.frames
       }
-      setPlayhead(Math.floor(position))
+      setPlayhead(loop && pingPong && position > clip.frames ? clip.frames * 2 - position : position)
       handle = requestAnimationFrame(tick)
     }
     handle = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(handle)
     // Reopening the playback clock is only needed for transport settings.
-  }, [playing, clip.id, clip.fps, clip.frames, speed, loop])
+  }, [playing, clip.id, clip.fps, clip.frames, speed, loop, pingPong])
 
   useEffect(() => {
     function shortcut(event: KeyboardEvent) {
@@ -313,7 +326,7 @@ function Workspace({ initial, asset, onExit }: { initial: CreatorProject; asset:
           <button disabled={!target} onClick={() => setFocus(n => n + 1)}>Object centreren</button>
           <button onClick={() => setReset(n => n + 1)}>Camera herstellen</button>
         </div>
-        <CreatorViewport {...{ asset, clip: preview, frame, selected: targetId, channel, playing, grid, axes, local, gizmos, view, focus, reset }}
+        <CreatorViewport {...{ asset, clip: preview, frame: playing ? playhead : frame, selected: targetId, channel, playing, grid, axes, local, gizmos, view, focus, reset }}
           onTarget={setTargetId} onTransform={value => put({ [channel]: value })} />
         <div className="creator-controls creator-transport" aria-label="Afspelen">
           <button onClick={() => seek(0)}>⏮ Begin</button>
@@ -323,6 +336,7 @@ function Workspace({ initial, asset, onExit }: { initial: CreatorProject; asset:
           <button disabled={frame === clip.frames} onClick={() => seek(frame + 1)}>+1 f</button>
           <button onClick={() => seek(clip.frames)}>Einde ⏭</button>
           <button aria-pressed={loop} onClick={() => setLoop(!loop)}>Herhalen</button>
+          <button disabled={!loop} aria-pressed={pingPong} onClick={() => setPingPong(!pingPong)}>Heen en terug</button>
           <label>Snelheid<select value={speed} onChange={event => setSpeed(Number(event.target.value))}>
             {[0.25, 0.5, 1, 1.5, 2].map(value => <option key={value} value={value}>{value}×</option>)}
           </select></label>
@@ -336,7 +350,7 @@ function Workspace({ initial, asset, onExit }: { initial: CreatorProject; asset:
           </select></label>
         </div>
         <CreatorTimeline clip={clip} frame={frame} zoom={zoom} selected={track && trackId(track)} label={name}
-          onFrame={seek} onSelect={selectTrack} />
+          onFrame={seek} onSelect={selectTrack} onMove={moveTimelineKey} />
       </section>
       <aside className="sidebar creator-properties">
         <section><h2>Transformtracks</h2><p>{target?.name ?? 'Kies een object'}</p>
