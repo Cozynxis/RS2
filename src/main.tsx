@@ -1,6 +1,6 @@
 import { useEffect, useState, type ChangeEvent, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
-import { cloneObject, copyObject, createNode, descendants, isVisible, kinds, loadProject, projectTypes, storageKey } from './model'
+import { cloneObject, copyObject, createNode, defaultUV, descendants, isVisible, kinds, loadProject, projectTypes, storageKey } from './model'
 import type { Kind, Mode, ModelNode, ObjectClip, Project, Vector } from './model'
 import { Viewport, type ViewOptions } from './Viewport'
 import { ProjectHome } from './ProjectHome'
@@ -10,7 +10,16 @@ import './style.css'
 import './studio.css'
 
 const modes = { translate: 'Verplaatsen', rotate: 'Roteren', scale: 'Schalen' } as const
-const symbols = { box: '◇', sphere: '○', cylinder: '▤', cone: '△', plane: '▱', torus: '◎', capsule: '◉', wedge: '◢', group: '▰' }
+const symbols = { box: '◇', sphere: '○', cylinder: '▤', cone: '△', plane: '▱', torus: '◎', capsule: '◉', wedge: '◢', group: '▰',
+  tetrahedron: '△', octahedron: '◇', icosahedron: '⬡', dodecahedron: '⬟', disc: '●' }
+const materials = {
+  Klei: { color: '#b38466', roughness: 0.92, metalness: 0, opacity: 1, emission: 0 },
+  Metaal: { color: '#b8cbe0', roughness: 0.27, metalness: 0.85, opacity: 1, emission: 0 },
+  Neon: { color: '#54ccff', roughness: 0.38, metalness: 0, opacity: 1, emission: 2.3 },
+  Doorschijnend: { color: '#84cbed', roughness: 0.18, metalness: 0, opacity: 0.35, emission: 0 },
+  Textuurbasis: { color: '#ffffff', roughness: 0.55, metalness: 0, opacity: 1, emission: 0 },
+}
+const basicKinds: Kind[] = ['box', 'sphere', 'cylinder', 'cone', 'plane', 'torus', 'capsule', 'wedge', 'group']
 const viewLabels = { grid: 'Raster', snap: 'Snapping', local: 'Lokale assen', wireframe: 'Draadmodel' }
 type History = { past: Project[]; current: Project; future: Project[] }
 
@@ -33,7 +42,7 @@ function ObjectTree({ nodes, parent, selected, onSelect, onVisibility }: {
     {nodes.filter(node => node.parent === parent).map(node => <li key={node.id}>
       <div className={`tree-row${isVisible(nodes, node) ? '' : ' hidden-node'}`}>
         <button aria-pressed={selected === node.id} onClick={() => onSelect(node.id)}>
-          <span aria-hidden="true">{symbols[node.kind]}</span> {node.name}
+          <span aria-hidden="true">{symbols[node.kind]}</span> {node.name}{node.locked && <span title="Transformatie vergrendeld"> ⌑</span>}
         </button>
         <button className="visibility" title={node.hidden ? 'Tonen' : 'Verbergen'}
           aria-label={`${node.name} ${node.hidden ? 'tonen' : 'verbergen'}`}
@@ -44,13 +53,14 @@ function ObjectTree({ nodes, parent, selected, onSelect, onVisibility }: {
   </ul>
 }
 
-function NumberField({ label, value, onChange, min, max, step = 'any' }: {
+function NumberField({ label, value, onChange, min, max, step = 'any', validate }: {
   label: string
   value: number
   onChange: (value: number) => void
   min?: number
   max?: number
   step?: number | 'any'
+  validate?: (value: number) => boolean
 }) {
   return <label>{label}<input key={value} type="number" defaultValue={Number(value.toFixed(4))}
     {...{ min, max, step }} onKeyDown={event => {
@@ -58,7 +68,7 @@ function NumberField({ label, value, onChange, min, max, step = 'any' }: {
     }} onBlur={event => {
       const input = event.currentTarget
       const next = input.valueAsNumber
-      if (!Number.isFinite(next) || !input.validity.valid) input.value = input.defaultValue
+      if (!Number.isFinite(next) || !input.validity.valid || (validate && !validate(next))) input.value = input.defaultValue
       else if (input.value !== input.defaultValue) onChange(next)
     }} /></label>
 }
@@ -133,6 +143,19 @@ function App() {
   }
   function toggleVisibility(node: ModelNode) {
     updateNode(node.id, { hidden: !node.hidden })
+  }
+  function isolate() {
+    if (!selected || !subtree) return
+    const visible = new Set(subtree)
+    let parent = selected.parent
+    while (parent) {
+      visible.add(parent)
+      parent = project.nodes.find(node => node.id === parent)?.parent ?? null
+    }
+    edit(current => ({ ...current, nodes: current.nodes.map(node => ({ ...node, hidden: !visible.has(node.id) })) }))
+  }
+  function showAll() {
+    edit(current => ({ ...current, nodes: current.nodes.map(node => node.hidden ? { ...node, hidden: false } : node) }))
   }
   function save() {
     try {
@@ -262,6 +285,7 @@ function App() {
           <button disabled={!history.past.length} onClick={() => stepHistory(false)}>Ongedaan maken <kbd>Ctrl+Z</kbd></button>
           <button disabled={!history.future.length} onClick={() => stepHistory(true)}>Opnieuw uitvoeren <kbd>Ctrl+Y</kbd></button>
           <button disabled={!selected} onClick={duplicate}>Dupliceren <kbd>Ctrl+D</kbd></button>
+          <button disabled={!selected} onClick={() => { if (selected) insert(copyObject(project, selected), selected.parent, 0) }}>Dupliceren op dezelfde plek</button>
           <button disabled={!selected} onClick={() => copy()}>Kopiëren <kbd>Ctrl+C</kbd></button>
           <button disabled={!selected} onClick={() => copy(true)}>Knippen <kbd>Ctrl+X</kbd></button>
           <button disabled={!clipboard} onClick={paste}>Plakken <kbd>Ctrl+V</kbd></button>
@@ -275,6 +299,37 @@ function App() {
             <button key={option} aria-pressed={options[option]} onClick={() => toggleView(option)}>{viewLabels[option]}</button>,
           )}
           <button aria-pressed={animate} onClick={() => setAnimate(!animate)}>Animatietijdlijn</button>
+          <button disabled={!selected} onClick={isolate}>Selectie isoleren</button>
+          <button disabled={!project.nodes.some(node => node.hidden)} onClick={showAll}>Alles zichtbaar maken</button>
+        </Menu>
+        <Menu label="Object">
+          <button disabled={!selected?.parent} onClick={() => select(selected?.parent ?? null)}>Bovenliggende groep selecteren</button>
+          <button disabled={!project.nodes.some(node => node.parent === selected?.id)}
+            onClick={() => select(project.nodes.find(node => node.parent === selected?.id)?.id ?? null)}>Eerste kind selecteren</button>
+          <button disabled={!selected} onClick={() => { if (selected) updateNode(selected.id, { locked: !selected.locked }) }}>
+            {selected?.locked ? 'Transformatie ontgrendelen' : 'Transformatie vergrendelen'}
+          </button>
+          <button disabled={!selected || selected.locked} onClick={() => {
+            if (selected) updateNode(selected.id, { position: [0, selected.position[1], 0] })
+          }}>Centreren op X/Z</button>
+          <button disabled={!selected || selected.locked} onClick={() => {
+            if (selected) updateNode(selected.id, { position: selected.position.map(n => Math.round(n * 4) / 4) as Vector })
+          }}>Positie op raster zetten</button>
+          <button disabled={!selected || selected.locked} onClick={() => {
+            if (selected) updateNode(selected.id, { rotation: selected.rotation.map(n => Math.round(n / 15) * 15) as Vector })
+          }}>Rotatie afronden op 15°</button>
+          <button disabled={!selected || selected.locked} onClick={() => {
+            if (selected) updateNode(selected.id, { scale: [selected.scale[0], selected.scale[0], selected.scale[0]] })
+          }}>Schaal gelijkmaken aan X</button>
+          {(['X', 'Y', 'Z'] as const).map((axis, index) =>
+            <button key={axis} disabled={!selected || selected.locked} onClick={() => {
+              if (selected) {
+                const scale: Vector = [...selected.scale]
+                scale[index] *= -1
+                updateNode(selected.id, { scale })
+              }
+            }}>Spiegelen over {axis}</button>,
+          )}
         </Menu>
       </nav>
       <div className="actions"><button className="primary" onClick={() => setExporting(true)}>Exporteren…</button></div>
@@ -317,7 +372,7 @@ function App() {
             <button title="Opnieuw uitvoeren" aria-label="Opnieuw uitvoeren" disabled={!history.future.length} onClick={() => stepHistory(true)}>↷</button>
           </div>
         </div>
-        <div className="primitive-bar" role="group" aria-label="Toevoegen">{(Object.keys(kinds) as Kind[]).map(kind =>
+        <div className="primitive-bar" role="group" aria-label="Toevoegen">{basicKinds.map(kind =>
           <button key={kind} onClick={() => add(kind)}><span aria-hidden="true">{symbols[kind]}</span>{kinds[kind]}</button>,
         )}</div>
         <Viewport project={project} selected={selected?.id ?? null} mode={mode} options={options} previewTime={animate ? previewTime : null}
@@ -354,9 +409,9 @@ function App() {
         {selected && <section key={selected.id}>
           <h2>Transformatie</h2>
           {([['position', 'Positie (m)'], ['rotation', 'Rotatie (°)'], ['scale', 'Schaal']] as const).map(([field, label]) =>
-            <fieldset key={field}><legend>{label}</legend><div className="vector">
+            <fieldset key={field} disabled={selected.locked}><legend>{label}</legend><div className="vector">
               {['X', 'Y', 'Z'].map((axis, index) => <NumberField key={axis} label={axis}
-                value={selected[field][index]} min={field === 'scale' ? 0.001 : undefined}
+                value={selected[field][index]} validate={field === 'scale' ? value => Math.abs(value) >= 0.001 : undefined}
                 onChange={value => {
                   const vector: Vector = [...selected[field]]
                   vector[index] = value
@@ -364,7 +419,7 @@ function App() {
                 }} />)}
             </div></fieldset>,
           )}
-          <button onClick={() => {
+          <button disabled={selected.locked} onClick={() => {
             const { position, rotation, scale } = createNode(selected.kind, selected.parent)
             updateNode(selected.id, { position, rotation, scale })
           }}>Transformatie herstellen</button>
@@ -372,6 +427,10 @@ function App() {
         {selected && selected.kind !== 'group' && <section key={`material-${selected.id}`}>
           <h2>Materiaal</h2>
           <div className="fields">
+            <label>Materiaalpreset<select value="" onChange={event => {
+              const value = event.target.value as keyof typeof materials
+              if (value) updateNode(selected.id, materials[value])
+            }}><option value="">Kies een preset…</option>{Object.keys(materials).map(name => <option key={name}>{name}</option>)}</select></label>
             <label className="color">Basiskleur<input type="color" value={selected.color}
               onChange={event => updateNode(selected.id, { color: event.target.value })} /></label>
             <NumberField label="Ruwheid" value={selected.roughness} min={0} max={1} onChange={roughness => updateNode(selected.id, { roughness })} />
@@ -381,7 +440,7 @@ function App() {
             <div className="check-grid">
               <label><input type="checkbox" checked={selected.flat ?? false} onChange={event =>
                 updateNode(selected.id, { flat: event.target.checked })} /> Vlakke normals</label>
-              <label><input type="checkbox" checked={selected.doubleSided ?? selected.kind === 'plane'} onChange={event =>
+              <label><input type="checkbox" checked={selected.doubleSided ?? (selected.kind === 'plane' || selected.kind === 'disc')} onChange={event =>
                 updateNode(selected.id, { doubleSided: event.target.checked })} /> Dubbelzijdig</label>
             </div>
             <label>Textuur (PNG / JPEG)<input type="file" accept="image/png,image/jpeg" onChange={event => void loadTexture(event, selected.id)} /></label>
@@ -389,6 +448,15 @@ function App() {
               <img src={selected.texture} alt="Huidige textuur" />
               <button onClick={() => updateNode(selected.id, { texture: undefined })}>Verwijderen</button>
             </div>}
+            {selected.texture && <fieldset><legend>Textuurplaatsing (UV)</legend><div className="fields">
+              {([['repeatU', 'Herhaling U'], ['repeatV', 'Herhaling V'], ['offsetU', 'Verschuiving U'],
+                ['offsetV', 'Verschuiving V'], ['rotation', 'Rotatie (°)']] as const).map(([axis, label]) =>
+                <NumberField key={axis} label={label} value={(selected.uv ?? defaultUV)[axis]}
+                  min={axis.startsWith('repeat') ? 0.01 : -1000} max={1000}
+                  onChange={value => updateNode(selected.id, { uv: { ...(selected.uv ?? defaultUV), [axis]: value } })} />,
+              )}
+              <button onClick={() => updateNode(selected.id, { uv: undefined })}>Textuurplaatsing herstellen</button>
+            </div></fieldset>}
           </div>
         </section>}
       </aside>

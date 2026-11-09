@@ -116,11 +116,12 @@ export function Viewport(props: Props) {
       gizmo.setScaleSnap(options.snap ? 0.25 : null)
       const node = project.nodes.find(node => node.id === selected)
       const object = node && isVisible(project.nodes, node) && model?.objects.get(node.id)
-      if (object && latest.current.previewTime === null) gizmo.attach(object)
+      if (object && !node?.locked && latest.current.previewTime === null) gizmo.attach(object)
       else gizmo.detach()
     }
     function focus() {
-      const object = gizmo.object ?? model?.root
+      const selected = latest.current.selected
+      const object = (selected ? model?.objects.get(selected) : undefined) ?? model?.root
       if (!object) return
       const bounds = new THREE.Box3().setFromObject(object)
       const center = bounds.isEmpty() ? object.getWorldPosition(new THREE.Vector3()) :

@@ -1,6 +1,8 @@
 export const kinds = {
   box: 'Kubus', sphere: 'Bol', cylinder: 'Cilinder', cone: 'Kegel',
   plane: 'Vlak', torus: 'Ring', capsule: 'Capsule', wedge: 'Wig', group: 'Groep',
+  tetrahedron: 'Tetraëder', octahedron: 'Octaëder', icosahedron: 'Icosaëder',
+  dodecahedron: 'Dodecaëder', disc: 'Schijf',
 } as const
 
 export type Kind = keyof typeof kinds
@@ -8,6 +10,8 @@ export type Vector = [number, number, number]
 export type Mode = 'translate' | 'rotate' | 'scale'
 export type Pose = { position: Vector; rotation: Vector; scale: Vector }
 export type Keyframe = Pose & { time: number }
+export type UV = { repeatU: number; repeatV: number; offsetU: number; offsetV: number; rotation: number }
+export const defaultUV: UV = { repeatU: 1, repeatV: 1, offsetU: 0, offsetV: 0, rotation: 0 }
 export type ModelNode = {
   id: string
   name: string
@@ -20,6 +24,8 @@ export type ModelNode = {
   roughness: number
   metalness: number
   texture?: string
+  uv?: UV
+  locked?: boolean
   hidden?: boolean
   opacity?: number
   emission?: number
@@ -49,8 +55,8 @@ export const storageKey = 'rs2-modelengine-v1'
 export function createNode(kind: Kind, parent: string | null): ModelNode {
   return {
     id: crypto.randomUUID(), name: kinds[kind], kind, parent,
-    position: [0, kind === 'plane' || kind === 'group' ? 0 : 0.5, 0],
-    rotation: kind === 'plane' ? [-90, 0, 0] : [0, 0, 0],
+    position: [0, kind === 'plane' || kind === 'disc' || kind === 'group' ? 0 : 0.5, 0],
+    rotation: kind === 'plane' || kind === 'disc' ? [-90, 0, 0] : [0, 0, 0],
     scale: [1, 1, 1], color: '#39cbb7', roughness: 0.55, metalness: 0,
   }
 }

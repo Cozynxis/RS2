@@ -12,6 +12,11 @@ const geometries: Record<Exclude<Kind, 'group'>, () => THREE.BufferGeometry> = {
   plane: () => new THREE.PlaneGeometry(1, 1),
   torus: () => new THREE.TorusGeometry(0.36, 0.14, 16, 48),
   capsule: () => new THREE.CapsuleGeometry(0.3, 0.4, 8, 24),
+  tetrahedron: () => new THREE.TetrahedronGeometry(0.55),
+  octahedron: () => new THREE.OctahedronGeometry(0.55),
+  icosahedron: () => new THREE.IcosahedronGeometry(0.55),
+  dodecahedron: () => new THREE.DodecahedronGeometry(0.55),
+  disc: () => new THREE.CircleGeometry(0.5, 32),
   wedge: () => {
     const profile = new THREE.Shape()
     profile.moveTo(-0.5, -0.5)
@@ -29,12 +34,19 @@ export function makeScene(project: Project) {
   const textures = new Map<string, THREE.Texture>()
   const loading: Promise<void>[] = []
 
-  function getTexture(url: string) {
-    const cached = textures.get(url)
+  function getTexture(url: string, uv?: ModelNode['uv']) {
+    const key = uv ? `${url}|${JSON.stringify(uv)}` : url
+    const cached = textures.get(key)
     if (cached) return cached
     const texture = new THREE.Texture()
     texture.colorSpace = THREE.SRGBColorSpace
-    textures.set(url, texture)
+    if (uv) {
+      texture.wrapS = texture.wrapT = THREE.RepeatWrapping
+      texture.repeat.set(uv.repeatU, uv.repeatV)
+      texture.offset.set(uv.offsetU, uv.offsetV)
+      texture.rotation = THREE.MathUtils.degToRad(uv.rotation)
+    }
+    textures.set(key, texture)
     loading.push(new THREE.ImageLoader().loadAsync(url).then(image => {
       texture.image = image
       texture.needsUpdate = true
@@ -57,11 +69,11 @@ export function makeScene(project: Project) {
       geometry,
       new THREE.MeshStandardMaterial({
         color: node.color, roughness: node.roughness, metalness: node.metalness,
-        side: (node.doubleSided ?? node.kind === 'plane') ? THREE.DoubleSide : THREE.FrontSide,
+        side: (node.doubleSided ?? (node.kind === 'plane' || node.kind === 'disc')) ? THREE.DoubleSide : THREE.FrontSide,
         flatShading: node.flat ?? false,
         opacity: node.opacity ?? 1, transparent: (node.opacity ?? 1) < 1,
         emissive: node.color, emissiveIntensity: node.emission ?? 0,
-        map: node.texture ? getTexture(node.texture) : null,
+        map: node.texture ? getTexture(node.texture, node.uv) : null,
       }),
     )
     object.name = node.name

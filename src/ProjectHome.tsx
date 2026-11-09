@@ -1,5 +1,7 @@
-import { useState, type FormEvent } from 'react'
+import { lazy, Suspense, useState, type FormEvent } from 'react'
 import { newProject, projectTypes, type Project, type ProjectType } from './model'
+
+const AnimationCreator = lazy(() => import('./AnimationCreator'))
 
 function ProjectIcon({ type }: { type: ProjectType }) {
   const paths: Record<ProjectType, string> = {
@@ -16,6 +18,9 @@ export function ProjectHome({ current, onOpen, onCreate }: {
   current: Project; onOpen: () => void; onCreate: (project: Project) => void;
 }) {
   const [type, choose] = useState<ProjectType>()
+  if (type === 'animation') return <Suspense fallback={<main className="home" role="status">Animation Creator laden…</main>}>
+    <AnimationCreator onExit={() => choose(undefined)} />
+  </Suspense>
   const category = type && projectTypes[type]
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -43,7 +48,7 @@ export function ProjectHome({ current, onOpen, onCreate }: {
         <label>Auteur <input name="author" maxLength={80} placeholder="Optioneel" /></label>
         <label>Startsjabloon <select name="template" defaultValue="1">{category.templates.map((template, index) =>
           <option key={template} value={index}>{template}</option>)}</select></label>
-        {(type === 'animation' || type === 'gfx') && <>
+        {type === 'gfx' && <>
           <label>Duur in seconden <input name="duration" type="number" min={0.25} max={60} step={0.25} defaultValue={2} required /></label>
           <label>Frames per seconde <select name="fps" defaultValue="30">{[12, 24, 30, 60].map(fps => <option key={fps}>{fps}</option>)}</select></label>
         </>}
